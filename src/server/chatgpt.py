@@ -120,7 +120,7 @@ class ChatGPT:
         messages = [x for x in self.current_thread['messages']]
         messages.append({
             'role': 'user',
-            'content': 'Title of our conversation? Cut prose.'
+            'content': 'Title of our conversation? Only include the title.'
         })
         response = openai.ChatCompletion.create(
             model=self.current_thread['model'],
