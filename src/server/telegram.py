@@ -154,6 +154,7 @@ class Telegram:
                 return
             # Make sure the user instance exists, is needed for authentication of callback_query
             self.user_manager.get_user_for_message(message)
+            logger.info('Received message from user %s, chat %s', message['from']['id'], message['chat']['id'])
             self._handle_message(message)
         if 'callback_query' in update:
             callback = update['callback_query']
@@ -162,6 +163,7 @@ class Telegram:
             if not self.user_manager.is_chat_known(message['chat']['id']):
                 logger.info('Chat %s is not allowed to interact with bot, got callback query.', message['chat']['id'])
                 return
+            logger.info('Received callback for chat %s', message['chat']['id'])
             self._handle_callback(message, callback)
 
     @command('Print help', 1)

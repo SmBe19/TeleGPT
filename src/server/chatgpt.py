@@ -116,6 +116,7 @@ class ChatGPT:
             json.dump(self.data, f)
 
     def _suggest_thread_name(self, silent=False):
+        logger.info('Ask ChatGPT for a thread name.')
         messages = [x for x in self.current_thread['messages']]
         messages.append({
             'role': 'user',
@@ -134,12 +135,14 @@ class ChatGPT:
             self.user.send_message(f'Renamed thread "{old_name}" to "{new_name}".')
 
     def _process_message(self, message):
+        logger.info('Send new message to ChatGPT.')
         # TODO deal with long threads, shortening them somehow
         self.current_thread['messages'].append({'role': 'user', 'content': message})
         response = openai.ChatCompletion.create(
             model=self.current_thread['model'],
             messages=self.current_thread['messages'],
         )
+        logger.info('Got response from ChatGPT.')
         logger.debug('Usage for ChatGPT: %s tokens by chat %s', response['usage']['total_tokens'], self.user.chatid)
         self.current_thread['total_tokens'] += response['usage']['total_tokens']
         response_text = response['choices'][0]['message']['content']
