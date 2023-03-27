@@ -134,6 +134,12 @@ class ChatGPT:
         response = openai.ChatCompletion.create(
             model=self.current_thread['model'],
             messages=messages,
+            logit_bias={
+                # Personal
+                30228: -1,
+                # Assistant
+                48902: -2,
+            }
         )
         response = response['choices'][0]['message']['content']
         new_name = response.strip('".')

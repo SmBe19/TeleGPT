@@ -9,6 +9,7 @@ import requests
 
 from server.chatgpt import ChatGPT
 from server.dalle import DallE
+from server.whisper import Whisper
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +118,7 @@ class Telegram:
         self.deduplicator = UpdateDeduplicator()
         self.chatgpt_manager = ChatGPTManager(self)
         self.dalle = DallE()
+        self.whisper = Whisper()
         self.user_manager = TelegramUserManager(self)
         self.assistant_name = 'TeleGPT'
 
@@ -281,6 +283,22 @@ class Telegram:
         } for size in ['256', '512', '1024']]]
         self._reply_keyboard(message, reply, buttons)
 
+    def _handle_normal_message(self, message):
+        self._chat_action(message, 'typing')
+        self.chatgpt_manager.get_chatgpt_for_message(message).submit_message(message['text'])
+
+    def _handle_audio_file(self, message, file_id):
+        file_info = self._post('getFile', file_id=file_id)
+        file_path = file_info['file_path']
+        full_url = f'https://api.telegram.org/file/bot{self.bot_token}/{file_path}'
+        transcript = self.whisper.transcribe_url(full_url)
+        if not transcript:
+            self._reply(message, 'Sorry, I did not understand this.')
+            return
+        self._reply(message, f'*Transcript*\n\n{transcript}')
+        self._chat_action(message, 'typing')
+        self.chatgpt_manager.get_chatgpt_for_message(message).submit_message(transcript)
+
     def _get_command_argument(self, message, command_name):
         text = message['text']
         for entity in message.get('entities', []):
@@ -341,6 +359,15 @@ class Telegram:
         }]]
 
     def _handle_message(self, message):
+        if 'text' in message:
+            self._handle_text_message(message)
+        elif 'audio' in message:
+            self._handle_audio_message(message)
+        elif 'voice' in message:
+            self._handle_voice_message(message)
+
+    def _handle_text_message(self, message):
+        logger.info('Handle text message')
         text = message['text']
         for entity in message.get('entities', []):
             if entity['type'] == 'bot_command':
@@ -364,9 +391,17 @@ class Telegram:
             return
         self._handle_normal_message(message)
 
-    def _handle_normal_message(self, message):
-        self._chat_action(message, 'typing')
-        self.chatgpt_manager.get_chatgpt_for_message(message).submit_message(message['text'])
+    def _handle_audio_message(self, message):
+        logger.info('Handle audio message')
+        if message['audio']['file_size'] > 15 * 1024 * 1024:
+            self._reply(message, 'Sorry, this file is too large.')
+        self._handle_audio_file(message, message['audio']['file_id'])
+
+    def _handle_voice_message(self, message):
+        logger.info('Handle voice message')
+        if message['voice']['file_size'] > 15 * 1024 * 1024:
+            self._reply(message, 'Sorry, this file is too large.')
+        self._handle_audio_file(message, message['voice']['file_id'])
 
     def _handle_callback(self, message, callback):
         data = json.loads(callback['data'])

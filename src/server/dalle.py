@@ -22,4 +22,5 @@ class DallE:
             response_format='url',
             size=f'{size}x{size}',
         )
+        logger.info('Finished generating image')
         return response['data'][0]['url']
