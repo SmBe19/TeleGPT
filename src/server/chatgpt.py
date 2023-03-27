@@ -73,6 +73,15 @@ class ChatGPT:
     def remindme(self, amount):
         self.queue.put(lambda: self._remindme(amount))
 
+    def set_system_message(self, message):
+        self.queue.put(lambda: self._set_system_message(message))
+
+    def get_current_system_message(self):
+        for message in self.current_thread['messages']:
+            if message['role'] == 'system':
+                return message['content']
+        return None
+
     def get_current_thread_id(self):
         return self.data['current_thread_id']
 
@@ -167,7 +176,6 @@ class ChatGPT:
             'messages': [
                 {
                     'role': 'system',
-                    # TODO make the system message configurable
                     'content': SYSTEM_MESSAGES['default'].format(assistant_name=self.user.telegram.assistant_name)
                 }
             ]
@@ -235,6 +243,13 @@ class ChatGPT:
             author = 'You' if message['role'] == 'user' else self.user.telegram.assistant_name
             content = message['content']
             self.user.send_message(f'*{author}*:\n{content}')
+
+    def _set_system_message(self, new_message):
+        for message in self.current_thread['messages']:
+            if message['role'] == 'system':
+                message['content'] = new_message
+                self.user.send_message('Updated system message.')
+                return
 
     def _process_messages(self):
         while True:

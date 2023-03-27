@@ -51,14 +51,14 @@ class ChatGPTManager:
         self.lock = threading.Lock()
         self.chatgpt_instances = {}
 
-    def get_chatgpt(self, chatid):
+    def get_chatgpt(self, chatid) -> ChatGPT:
         with self.lock:
             if chatid not in self.chatgpt_instances or not self.chatgpt_instances[chatid].is_active():
                 self.chatgpt_instances[chatid] = ChatGPT(self.telegram.user_manager.get_user(chatid))
                 self.chatgpt_instances[chatid].start()
             return self.chatgpt_instances[chatid]
 
-    def get_chatgpt_for_message(self, message):
+    def get_chatgpt_for_message(self, message) -> ChatGPT:
         return self.get_chatgpt(message['chat']['id'])
 
     def close(self):
@@ -166,7 +166,7 @@ class Telegram:
             logger.info('Received callback for chat %s', message['chat']['id'])
             self._handle_callback(message, callback)
 
-    @command('Print help', 1)
+    @command('Print help', 90)
     def help(self, message):
         # TODO write better help message
         self._reply(
@@ -182,11 +182,11 @@ class Telegram:
             f'Hi {username}, I am {self.assistant_name}, your personal assistant. How can I help you today?'
         )
 
-    @command('Start a new conversation', 2)
+    @command('Start a new conversation', 10)
     def new(self, message):
         self.chatgpt_manager.get_chatgpt_for_message(message).new_thread()
 
-    @command('Rename the current thread', 3)
+    @command('Rename the current thread', 16)
     def rename(self, message):
         new_name = self._get_command_argument(message, '/rename')
         if not new_name:
@@ -196,15 +196,15 @@ class Telegram:
         else:
             self.chatgpt_manager.get_chatgpt_for_message(message).rename_thread(new_name)
 
-    @command('Automatically name the current thread', 4)
+    @command('Automatically name the current thread', 12)
     def autoname(self, message):
         self.chatgpt_manager.get_chatgpt_for_message(message).rename_thread_with_suggestion()
 
-    @command('Finish the current thread', 5)
+    @command('Finish the current thread', 17)
     def finish(self, message):
         self.chatgpt_manager.get_chatgpt_for_message(message).finish_thread()
 
-    @command('Rewind user messages', 6)
+    @command('Rewind user messages', 14)
     def rewind(self, message):
         amount = self._get_command_argument(message, '/rewind')
         try:
@@ -213,7 +213,21 @@ class Telegram:
             amount = 1
         self.chatgpt_manager.get_chatgpt_for_message(message).rewind(amount)
 
-    @command('Remind you of the last few messages', 7)
+    @command('Change the system message', 15)
+    def system(self, message):
+        new_system_message = self._get_command_argument(message, '/system')
+        if not new_system_message:
+            current_system_message = self.chatgpt_manager.get_chatgpt_for_message(message).get_current_system_message()
+            self._reply(message,
+                        f'The current system message is "{current_system_message}". '
+                        f'Please enter the new system message or c to cancel.')
+            with self.user_manager.get_user_for_message(message) as user:
+                user.open_command = self.system
+        else:
+            if len(new_system_message) > 1:
+                self.chatgpt_manager.get_chatgpt_for_message(message).set_system_message(new_system_message)
+
+    @command('Remind you of the last few messages', 13)
     def remindme(self, message):
         amount = self._get_command_argument(message, '/remindme')
         try:
@@ -222,7 +236,7 @@ class Telegram:
             amount = 1
         self.chatgpt_manager.get_chatgpt_for_message(message).remindme(amount)
 
-    @command('Change the current thread', 8)
+    @command('Change the current thread', 11)
     def thread(self, message):
         chatgpt = self.chatgpt_manager.get_chatgpt_for_message(message)
         current_thread_id = chatgpt.get_current_thread_id()
