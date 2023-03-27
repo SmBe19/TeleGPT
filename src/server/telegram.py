@@ -184,7 +184,8 @@ class Telegram:
 
     @command('Start a new conversation', 10)
     def new(self, message):
-        self.chatgpt_manager.get_chatgpt_for_message(message).new_thread()
+        template = self._get_command_argument(message, '/new')
+        self.chatgpt_manager.get_chatgpt_for_message(message).new_thread(template or 'default')
 
     @command('Rename the current thread', 16)
     def rename(self, message):
@@ -262,6 +263,7 @@ class Telegram:
         else:
             with self.user_manager.get_user_for_message(message) as user:
                 image_size = user.dalle_size
+            self._chat_action(message, 'upload_photo')
             image_url = self.dalle.generate_image(prompt, image_size)
             self._reply_photo(message, image_url)
 
@@ -319,6 +321,9 @@ class Telegram:
     def _reply_photo(self, message, photo_url):
         self._send_photo(message['chat']['id'], photo_url)
 
+    def _chat_action(self, message, action):
+        self._post('sendChatAction', chat_id=message['chat']['id'], action=action)
+
     def _update_reply(self, message, reply):
         return self._update_message(message['chat']['id'], message['message_id'], reply)
 
@@ -360,6 +365,7 @@ class Telegram:
         self._handle_normal_message(message)
 
     def _handle_normal_message(self, message):
+        self._chat_action(message, 'typing')
         self.chatgpt_manager.get_chatgpt_for_message(message).submit_message(message['text'])
 
     def _handle_callback(self, message, callback):

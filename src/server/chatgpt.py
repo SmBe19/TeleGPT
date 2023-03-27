@@ -52,8 +52,8 @@ class ChatGPT:
         return {thread_id: value['name'] for thread_id, value in
                 sorted(self.data['threads'].items(), key=lambda x: x[0])}
 
-    def new_thread(self):
-        self.queue.put(lambda: self._new_thread())
+    def new_thread(self, system_message_template):
+        self.queue.put(lambda: self._new_thread(system_message_template))
 
     def rename_thread(self, new_name):
         self.queue.put(lambda: self._rename_thread(new_name))
@@ -129,14 +129,14 @@ class ChatGPT:
         messages = [x for x in self.current_thread['messages']]
         messages.append({
             'role': 'user',
-            'content': 'Title of our conversation? Only include the title.'
+            'content': 'Very short title of our conversation? Only include the title.'
         })
         response = openai.ChatCompletion.create(
             model=self.current_thread['model'],
             messages=messages,
         )
         response = response['choices'][0]['message']['content']
-        new_name = response.strip('"')
+        new_name = response.strip('".')
         old_name = self.data['threads'][self.get_current_thread_id()]['name']
         self.data['threads'][self.get_current_thread_id()]['name'] = new_name
         self._save_root_data()
@@ -162,7 +162,9 @@ class ChatGPT:
                 len(self.current_thread['messages']) >= MESSAGES_UNTIL_AUTONAME * 2:
             self._suggest_thread_name(silent=True)
 
-    def _new_thread(self, silent=False):
+    def _new_thread(self, system_message_template='default', silent=False):
+        if system_message_template not in SYSTEM_MESSAGES:
+            system_message_template = 'default'
         thread_id = str(self.data['next_thread_id'])
         self.data['next_thread_id'] += 1
         self.data['threads'][thread_id] = {
@@ -176,7 +178,8 @@ class ChatGPT:
             'messages': [
                 {
                     'role': 'system',
-                    'content': SYSTEM_MESSAGES['default'].format(assistant_name=self.user.telegram.assistant_name)
+                    'content': SYSTEM_MESSAGES[system_message_template].format(
+                        assistant_name=self.user.telegram.assistant_name)
                 }
             ]
         }
