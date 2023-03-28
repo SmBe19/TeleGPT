@@ -8,3 +8,6 @@ SYSTEM_MESSAGES = {
     'adventure': 'I want you to act as a text based adventure game. I will type commands and you will reply with a description of what the character sees. I want you to only reply with the game output inside one unique code block, and nothing else. do not write explanations. do not type commands unless I instruct you to do so. when i need to tell you something in english, i will do so by putting text inside curly brackets {{like this}}.',
 }
 MESSAGES_UNTIL_AUTONAME = 4
+MIN_HISTORY_CONTEXT = 2
+TARGET_HISTORY_CONTEXT = 16
+HISTORY_TOKEN_LIMIT = 2800

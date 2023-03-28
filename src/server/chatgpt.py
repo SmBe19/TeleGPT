@@ -7,7 +7,8 @@ from queue import Queue, Empty
 
 import openai
 
-from consts import MAX_WORKER_IDLE_SECONDS, DATA_DIR, SYSTEM_MESSAGES, MESSAGES_UNTIL_AUTONAME
+from consts import MAX_WORKER_IDLE_SECONDS, DATA_DIR, SYSTEM_MESSAGES, MESSAGES_UNTIL_AUTONAME, HISTORY_TOKEN_LIMIT, \
+    MIN_HISTORY_CONTEXT, TARGET_HISTORY_CONTEXT
 
 logger = logging.getLogger(__name__)
 
@@ -77,10 +78,7 @@ class ChatGPT:
         self.queue.put(lambda: self._set_system_message(message))
 
     def get_current_system_message(self):
-        for message in self.current_thread['messages']:
-            if message['role'] == 'system':
-                return message['content']
-        return None
+        return self.current_thread['init_message']
 
     def get_current_thread_id(self):
         return self.data['current_thread_id']
@@ -124,9 +122,33 @@ class ChatGPT:
         with open(root_data_path, 'w') as f:
             json.dump(self.data, f)
 
+    def _get_latest_summary(self):
+        summaries = [x for x in self.current_thread['summaries'] if
+                     x['last_message'] < len(self.current_thread['messages']) - MIN_HISTORY_CONTEXT]
+        if len(summaries) > 0:
+            return max(summaries, key=lambda x: x['last_message'])
+        return None
+
+    def _get_current_messages(self, init_message=None):
+        messages = [{
+            'role': 'system',
+            'content': init_message or self.current_thread['init_message']
+        }]
+        start = 0
+        latest_summary = self._get_latest_summary()
+        if latest_summary:
+            start = latest_summary['last_message'] + 1
+            messages.append({
+                'role': 'system',
+                'content': 'This is an ongoing conversation. The summary of the conversation so far: ' +
+                           latest_summary['summary']
+            })
+        messages.extend(self.current_thread['messages'][start:])
+        return messages
+
     def _suggest_thread_name(self, silent=False):
         logger.info('Ask ChatGPT for a thread name.')
-        messages = [x for x in self.current_thread['messages'] if x['role'] != 'system']
+        messages = self._get_current_messages('Your task is to find a topic of the following conversation.')
         messages.append({
             'role': 'user',
             'content': 'Very short topic of our conversation? Only include the topic.'
@@ -149,13 +171,58 @@ class ChatGPT:
         if not silent:
             self.user.send_message(f'Renamed thread "{old_name}" to "{new_name}".')
 
-    def _process_message(self, message):
-        logger.info('Send new message to ChatGPT.')
-        # TODO deal with long threads, shortening them somehow
-        self.current_thread['messages'].append({'role': 'user', 'content': message})
+    def _add_summary(self):
+        logger.info('Compress history, ask ChatGPT for a summary of the conversation.')
+        messages = self._get_current_messages(
+            'You are {assistant_name}, a friendly personal assistant. '
+            'Your task is to summarize the provided text. Be as detailed as possible. '
+            'Include all details a large language model needs to answer questions about the text only using the '
+            'summary.'.format(assistant_name=self.user.telegram.assistant_name))
+        num_system_messages = sum(1 for x in messages if x['role'] == 'system')
+        last_message = min(max(len(messages) - TARGET_HISTORY_CONTEXT, MIN_HISTORY_CONTEXT + num_system_messages),
+                           len(messages)) - 1
+        latest_summary = self._get_latest_summary()
+        last_message_without_system = last_message - num_system_messages
+        last_message_in_all_messages = (last_message_without_system if latest_summary is None else
+                                        latest_summary['last_message'] + 1 + last_message_without_system)
+
+        for message in messages:
+            if message['content'].startswith(
+                    'This is an ongoing conversation. The summary of the conversation so far:'):
+                message['role'] = 'user'
+        messages = messages[:last_message + 1]
+        messages.append({
+            'role': 'user',
+            'content': 'Your task is to summarize the provided text. Be as detailed as possible. '
+                       'Include all details a large language model needs to know to be able to answer questions '
+                       'about the text only using the summary.'
+        })
         response = openai.ChatCompletion.create(
             model=self.current_thread['model'],
-            messages=self.current_thread['messages'],
+            messages=messages,
+        )
+        summary = response['choices'][0]['message']['content']
+        self.current_thread['summaries'].append({
+            'last_message': last_message_in_all_messages,
+            'summary': summary,
+        })
+        logger.info('Added new history entry')
+        self._save_current_thread()
+
+    def _check_summary_needed(self):
+        messages = self._get_current_messages()
+        token_estimate = sum(len(x['content'].split()) for x in messages) * 1.25
+        logger.info(f'The current estimated context length is {token_estimate} tokens')
+        if token_estimate > HISTORY_TOKEN_LIMIT:
+            self._add_summary()
+
+    def _process_message(self, message):
+        logger.info('Send new message to ChatGPT.')
+        self.current_thread['messages'].append({'role': 'user', 'content': message})
+        messages = self._get_current_messages()
+        response = openai.ChatCompletion.create(
+            model=self.current_thread['model'],
+            messages=messages,
         )
         logger.info('Got response from ChatGPT.')
         logger.debug('Usage for ChatGPT: %s tokens by chat %s', response['usage']['total_tokens'], self.user.chatid)
@@ -167,6 +234,7 @@ class ChatGPT:
         if self.data['threads'][self.get_current_thread_id()]['name'] == 'Unnamed thread' and \
                 len(self.current_thread['messages']) >= MESSAGES_UNTIL_AUTONAME * 2:
             self._suggest_thread_name(silent=True)
+        self._check_summary_needed()
 
     def _new_thread(self, system_message_template='default', silent=False):
         if system_message_template not in SYSTEM_MESSAGES:
@@ -181,13 +249,10 @@ class ChatGPT:
         self.current_thread = {
             'model': 'gpt-3.5-turbo',
             'total_tokens': 0,
-            'messages': [
-                {
-                    'role': 'system',
-                    'content': SYSTEM_MESSAGES[system_message_template].format(
-                        assistant_name=self.user.telegram.assistant_name)
-                }
-            ]
+            'init_message': SYSTEM_MESSAGES[system_message_template].format(
+                assistant_name=self.user.telegram.assistant_name),
+            'messages': [],
+            'summaries': []
         }
         self._save_current_thread()
         self._save_root_data()
@@ -244,7 +309,7 @@ class ChatGPT:
         self.user.send_message(f'Rewound {amount - remaining_amount} user messages.')
 
     def _remindme(self, amount):
-        messages = [x for x in self.current_thread['messages'] if x['role'] != 'system']
+        messages = self.current_thread['messages']
         start = max(0, len(messages) - amount)
         plural = 's' if len(messages) - start != 1 else ''
         self.user.send_message(f'The last {len(messages) - start} message{plural}:')
@@ -254,11 +319,8 @@ class ChatGPT:
             self.user.send_message(f'*{author}*:\n{content}')
 
     def _set_system_message(self, new_message):
-        for message in self.current_thread['messages']:
-            if message['role'] == 'system':
-                message['content'] = new_message
-                self.user.send_message('Updated system message.')
-                return
+        self.current_thread['init_message'] = new_message
+        self.user.send_message('Updated system message.')
 
     def _process_messages(self):
         while True:
@@ -276,5 +338,8 @@ class ChatGPT:
                         return
                 continue
             self.last_update = time.time()
-            item()
+            try:
+                item()
+            except Exception as e:
+                logger.error('ChatGPT failed', exc_info=e)
             self.queue.task_done()
