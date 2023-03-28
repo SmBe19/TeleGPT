@@ -126,10 +126,10 @@ class ChatGPT:
 
     def _suggest_thread_name(self, silent=False):
         logger.info('Ask ChatGPT for a thread name.')
-        messages = [x for x in self.current_thread['messages']]
+        messages = [x for x in self.current_thread['messages'] if x['role'] != 'system']
         messages.append({
             'role': 'user',
-            'content': 'Very short title of our conversation? Only include the title.'
+            'content': 'Very short topic of our conversation? Only include the topic.'
         })
         response = openai.ChatCompletion.create(
             model=self.current_thread['model'],
