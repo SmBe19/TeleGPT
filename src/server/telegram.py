@@ -95,6 +95,7 @@ class TelegramUser:
         self.chatid = chatid
         self.lock = threading.Lock()
         self.dalle_size = '256'
+        self.dalle_imgurl = False
         self.open_command = None
 
     def send_message(self, text):
@@ -265,8 +266,11 @@ class Telegram:
         else:
             with self.user_manager.get_user_for_message(message) as user:
                 image_size = user.dalle_size
+                reply_imgurl = user.dalle_imgurl
             self._chat_action(message, 'upload_photo')
             image_url = self.dalle.generate_image(prompt, image_size)
+            if reply_imgurl:
+                self._reply(message, image_url)
             self._reply_photo(message, image_url)
 
     @command('Adjust image generation image size', 21)
@@ -282,6 +286,16 @@ class Telegram:
             }),
         } for size in ['256', '512', '1024']]]
         self._reply_keyboard(message, reply, buttons)
+
+    @command('Switch sending image url', 22)
+    def imgurl(self, message):
+        with self.user_manager.get_user_for_message(message) as user:
+            user.dalle_imgurl = not user.dalle_imgurl
+            new_imgurl = user.dalle_imgurl
+        if new_imgurl:
+            self._reply(message, 'Changed setting. Will send image url.')
+        else:
+            self._reply(message, 'Changed setting. Will not send image url.')
 
     def _handle_normal_message(self, message):
         self._chat_action(message, 'typing')
