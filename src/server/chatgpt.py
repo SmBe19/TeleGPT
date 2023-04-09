@@ -7,6 +7,9 @@ from queue import Queue, Empty
 
 import openai
 
+from agent.agent import Agent
+from agent.tools.python import Python
+from agent.tools.wikipedia import Wikipedia
 from consts import MAX_WORKER_IDLE_SECONDS, DATA_DIR, SYSTEM_MESSAGES, MESSAGES_UNTIL_AUTONAME, HISTORY_TOKEN_LIMIT, \
     MIN_HISTORY_CONTEXT, TARGET_HISTORY_CONTEXT
 
@@ -74,6 +77,9 @@ class ChatGPT:
     def remindme(self, amount):
         self.queue.put(lambda: self._remindme(amount))
 
+    def agent(self, prompt):
+        self.queue.put(lambda: self._agent(prompt))
+
     def set_system_message(self, message):
         self.queue.put(lambda: self._set_system_message(message))
 
@@ -128,6 +134,12 @@ class ChatGPT:
         if len(summaries) > 0:
             return max(summaries, key=lambda x: x['last_message'])
         return None
+
+    def _get_current_messages_start(self):
+        latest_summary = self._get_latest_summary()
+        if latest_summary:
+            return latest_summary['last_message'] + 1
+        return 0
 
     def _get_current_messages(self, init_message=None):
         messages = [{
@@ -318,6 +330,27 @@ class ChatGPT:
             content = message['content']
             self.user.send_message(f'*{author}*:\n{content}')
 
+    def _agent(self, prompt):
+        my_agent = Agent({
+            'PYTHON': Python(require_manual_approval=False),
+            'WIKIPEDIA': Wikipedia()
+        })
+        previous_messages = self.current_thread['messages'][self._get_current_messages_start():]
+        logger.info('Start new agent.')
+        response = my_agent.process_prompt(
+            prompt,
+            previous_messages=previous_messages,
+            update_notifier=lambda update: self.user.send_message(update)
+        )
+        logger.info('Got agent response.')
+        if response is None:
+            self.user.send_message('Agent did not return valid response.')
+            return
+        self.current_thread['messages'].append({'role': 'user', 'content': prompt})
+        self.current_thread['messages'].append({'role': 'assistant', 'content': response})
+        self.user.send_message(response)
+        self._check_summary_needed()
+
     def _set_system_message(self, new_message):
         self.current_thread['init_message'] = new_message
         self.user.send_message('Updated system message.')
@@ -342,4 +375,5 @@ class ChatGPT:
                 item()
             except Exception as e:
                 logger.error('ChatGPT failed', exc_info=e)
+                self.user.send_message('Sorry, I crashed. ' + str(e))
             self.queue.task_done()

@@ -256,7 +256,12 @@ class Telegram:
         }] for thread_id in threads]
         self._reply_keyboard(message, reply, self._with_cancel_button(buttons))
 
-    @command('Generate an image with DALL·E', 20)
+    @command('Use an agent to answer the prompt', 20)
+    def agent(self, message):
+        prompt = self._get_command_argument(message, '/agent')
+        self.chatgpt_manager.get_chatgpt_for_message(message).agent(prompt)
+
+    @command('Generate an image with DALL·E', 40)
     def imagine(self, message):
         prompt = self._get_command_argument(message, '/imagine')
         if not prompt:
@@ -273,7 +278,7 @@ class Telegram:
                 self._reply(message, image_url)
             self._reply_photo(message, image_url)
 
-    @command('Adjust image generation image size', 21)
+    @command('Adjust image generation image size', 41)
     def imgsize(self, message):
         with self.user_manager.get_user_for_message(message) as user:
             image_size = user.dalle_size
@@ -287,7 +292,7 @@ class Telegram:
         } for size in ['256', '512', '1024']]]
         self._reply_keyboard(message, reply, buttons)
 
-    @command('Switch sending image url', 22)
+    @command('Switch sending image url', 42)
     def imgurl(self, message):
         with self.user_manager.get_user_for_message(message) as user:
             user.dalle_imgurl = not user.dalle_imgurl
