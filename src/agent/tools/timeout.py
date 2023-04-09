@@ -1,4 +1,7 @@
 import multiprocessing
+import sys
+import traceback
+from io import StringIO
 
 
 class TimeoutException(Exception):
@@ -8,21 +11,35 @@ class TimeoutException(Exception):
 class Process(multiprocessing.Process):
     def __init__(self, *args, **kwargs):
         multiprocessing.Process.__init__(self, *args, **kwargs)
-        self._pconn, self._cconn = multiprocessing.Pipe()
+        self._exc_pipe_out, self._exc_pipe_in = multiprocessing.Pipe()
+        self._stdout_pipe_out, self._stdout_pipe_in = multiprocessing.Pipe()
         self._exception = None
+        self._stdout = None
 
     def run(self):
+        orig_stdout = sys.stdout
+        sys.stdout = buffer = StringIO()
         try:
             multiprocessing.Process.run(self)
-            self._cconn.send(None)
+            self._exc_pipe_in.send(None)
+            self._stdout_pipe_in.send(buffer.getvalue().strip())
         except Exception as e:
-            self._cconn.send(e)
+            tb = traceback.format_exc()
+            self._exc_pipe_in.send((e, tb))
+        finally:
+            sys.stdout = orig_stdout
 
     @property
     def exception(self):
-        if self._pconn.poll():
-            self._exception = self._pconn.recv()
+        if self._exc_pipe_out.poll():
+            self._exception = self._exc_pipe_out.recv()
         return self._exception
+
+    @property
+    def stdout(self):
+        if self._stdout_pipe_out.poll():
+            self._stdout = self._stdout_pipe_out.recv()
+        return self._stdout
 
 
 def run_with_time_limit(seconds, callable):
@@ -33,4 +50,5 @@ def run_with_time_limit(seconds, callable):
         process.terminate()
         raise TimeoutException("Code timed out.")
     if process.exception:
-        raise process.exception
+        raise process.exception[0]
+    return process.stdout

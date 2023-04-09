@@ -1,7 +1,5 @@
 import ast
 import logging
-import sys
-from io import StringIO
 
 from agent.tools.timeout import run_with_time_limit
 from agent.tools.tool import Tool
@@ -22,7 +20,7 @@ class Python(Tool):
 
     def usage(self):
         return 'Include [TOOL PYTHON]<code>[/TOOL] in your response and I will provide you ' \
-               'with the result of the code after execution. I can not install anything from pip.'
+               'with the result of the code after execution. I forbidden to install any packages from pip.'
 
     def examples(self):
         return [
@@ -93,14 +91,15 @@ class Python(Tool):
 
     def _execute_code(self, code):
         logger.info('Going to execute the code')
-        original_out = sys.stdout
-        sys.stdout = buffer = StringIO()
         try:
-            run_with_time_limit(30, lambda: exec(code, {}, {}))
+            def run_code():
+                env = {}
+                # It's important that locals and globals are the same object
+                exec(code, env, env)
+
+            result = run_with_time_limit(30, run_code)
         except Exception as e:
             logger.warning('Code failed to run: %s', e)
             return e
-        sys.stdout = original_out
-        result = buffer.getvalue().strip()
         logger.info('Got the following result: %s', result)
         return result
