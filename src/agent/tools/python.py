@@ -3,7 +3,7 @@ import logging
 import sys
 from io import StringIO
 
-from agent.tools.timeout import time_limit
+from agent.tools.timeout import run_with_time_limit
 from agent.tools.tool import Tool
 
 logger = logging.getLogger(__name__)
@@ -96,8 +96,7 @@ class Python(Tool):
         original_out = sys.stdout
         sys.stdout = buffer = StringIO()
         try:
-            with time_limit(30):
-                exec(code, {}, {})
+            run_with_time_limit(30, lambda: exec(code, {}, {}))
         except Exception as e:
             logger.warning('Code failed to run: %s', e)
             return e
