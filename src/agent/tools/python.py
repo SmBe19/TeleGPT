@@ -20,12 +20,14 @@ class Python(Tool):
 
     def usage(self):
         return 'Include [TOOL PYTHON]<code>[/TOOL] in your response and I will provide you ' \
-               'with the result of the code after execution. I forbidden to install any packages from pip.'
+               'with the result of the code after execution. I am forbidden to install any packages from pip.'
 
     def examples(self):
         return [
             '[TOOL PYTHON]print(256*2)[/TOOL]',
-            '[TOOL PYTHON]a = 5;b = 7; print(a**b)[/TOOL]'
+            '[TOOL PYTHON]a = 5;b = 7; print(a**b)[/TOOL]',
+            '[TOOL PYTHON]p = (3/7)**3\nresult = round(p * 100, 1)\nprint(result)[/TOOL]',
+            '[TOOL PYTHON]import datetime\nnow = datetime.datetime.now()\nprint(now.strftime("%H:%M:%S"))[/TOOL]'
         ]
 
     def process(self, prompt):
