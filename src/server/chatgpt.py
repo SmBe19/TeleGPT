@@ -348,6 +348,7 @@ class ChatGPT:
             return
         self.current_thread['messages'].append({'role': 'user', 'content': prompt})
         self.current_thread['messages'].append({'role': 'assistant', 'content': response})
+        self._save_current_thread()
         self.user.send_message(response)
         self._check_summary_needed()
 
