@@ -72,13 +72,13 @@ def start_server(telegram, thread_pool):
 
 
 def run_server():
-    logging.info('Setup telegram')
+    logger.info('Setup telegram')
     telegram = setup_telegram()
 
-    logging.info('Start telegram webhook server')
+    logger.info('Start telegram webhook server')
     thread_pool = ThreadPool(processes=4)
     server = start_server(telegram, thread_pool)
-    logging.info('Server started')
+    logger.info('Server started')
 
     try:
         while True:
