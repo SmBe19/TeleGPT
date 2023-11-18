@@ -19,6 +19,7 @@ class TelegramError(Exception):
 
 
 commands = {}
+callbacks = {}
 
 
 def command(description, order):
@@ -26,6 +27,14 @@ def command(description, order):
         f.__description__ = description
         f.__sort_order__ = order
         commands[f.__name__] = f
+        return f
+
+    return inner
+
+
+def callback(cmd):
+    def inner(f):
+        callbacks[cmd] = f
         return f
 
     return inner
@@ -94,12 +103,41 @@ class TelegramUser:
         self.telegram = telegram
         self.chatid = chatid
         self.lock = threading.Lock()
-        self.dalle_size = '256'
+        self.dalle_model = 'dall-e-2'
+        self.dalle2_size = '256x256'
+        self.dalle3_size = '1024x1024'
+        self.dalle3_quality = 'standard'
+        self.dalle3_style = 'natural'
+        self.dalle_prompt = False
         self.dalle_imgurl = False
         self.open_command = None
 
     def send_message(self, text):
         self.telegram._send_message(self.chatid, text)
+
+    def dalle_size(self):
+        if self.dalle_model == 'dall-e-2':
+            return self.dalle2_size
+        elif self.dalle_model == 'dall-e-3':
+            return self.dalle3_size
+        else:
+            raise ValueError()
+
+    def set_dalle_size(self, size):
+        if self.dalle_model == 'dall-e-2':
+            self.dalle2_size = size
+        elif self.dalle_model == 'dall-e-3':
+            self.dalle3_size = size
+        else:
+            raise ValueError()
+
+    def available_dalle_sizes(self):
+        if self.dalle_model == 'dall-e-2':
+            return ['256x256', '512x512', '1024x1024']
+        elif self.dalle_model == 'dall-e-3':
+            return ['1024x1024', '1792x1024', '1024x1792']
+        else:
+            raise ValueError()
 
     def __enter__(self):
         self.lock.acquire()
@@ -190,7 +228,7 @@ class Telegram:
         template = self._get_command_argument(message, '/new')
         self.chatgpt_manager.get_chatgpt_for_message(message).new_thread(template or 'default')
 
-    @command('Rename the current thread', 16)
+    @command('Rename the current thread', 17)
     def rename(self, message):
         new_name = self._get_command_argument(message, '/rename')
         if not new_name:
@@ -204,7 +242,7 @@ class Telegram:
     def autoname(self, message):
         self.chatgpt_manager.get_chatgpt_for_message(message).rename_thread_with_suggestion()
 
-    @command('Finish the current thread', 17)
+    @command('Finish the current thread', 18)
     def finish(self, message):
         self.chatgpt_manager.get_chatgpt_for_message(message).finish_thread()
 
@@ -231,6 +269,24 @@ class Telegram:
             if len(new_system_message) > 1:
                 self.chatgpt_manager.get_chatgpt_for_message(message).set_system_message(new_system_message)
 
+    @command('Select the model to use', 16)
+    def model(self, message):
+        current_model = self.chatgpt_manager.get_chatgpt_for_message(message).get_current_model()
+        reply = f'Choose the new model (currently {current_model})'
+        buttons = [[{
+            'text': model,
+            'callback_data': json.dumps({
+                'cmd': 'model',
+                'new_model': model
+            }),
+        } for model in ['gpt-3.5-turbo', 'gpt-4', 'gpt-4-1106-preview']]]
+        self._reply_keyboard(message, reply, buttons)
+
+    @callback('model')
+    def model_callback(self, message, data):
+        new_model = data['new_model']
+        self.chatgpt_manager.get_chatgpt_for_message(message).set_model(new_model)
+
     @command('Remind you of the last few messages', 13)
     def remindme(self, message):
         amount = self._get_command_argument(message, '/remindme')
@@ -256,6 +312,11 @@ class Telegram:
         }] for thread_id in threads]
         self._reply_keyboard(message, reply, self._with_cancel_button(buttons))
 
+    @callback('switch_thread')
+    def thread_callback(self, message, data):
+        new_thread_id = data['new_thread_id']
+        self.chatgpt_manager.get_chatgpt_for_message(message).switch_thread(new_thread_id)
+
     @command('Use an agent to answer the prompt', 20)
     def agent(self, message):
         prompt = self._get_command_argument(message, '/agent')
@@ -270,29 +331,122 @@ class Telegram:
                 user.open_command = self.imagine
         else:
             with self.user_manager.get_user_for_message(message) as user:
-                image_size = user.dalle_size
+                image_model = user.dalle_model
+                image_size = user.dalle_size()
+                image_quality = user.dalle3_quality
+                image_style = user.dalle3_style
+                reply_prompt = user.dalle_prompt
                 reply_imgurl = user.dalle_imgurl
             self._chat_action(message, 'upload_photo')
-            image_url = self.dalle.generate_image(prompt, image_size)
+            if image_model == 'dall-e-2':
+                image_url = self.dalle.generate_image_v2(prompt, image_size)
+            elif image_model == 'dall-e-3':
+                image_url, revised_prompt = self.dalle.generate_image_v3(prompt, image_size, image_quality, image_style)
+                if reply_prompt:
+                    self._reply(message, "The prompt might have been changed. The actual prompt used:")
+                    self._reply(message, revised_prompt)
+            else:
+                raise ValueError()
             if reply_imgurl:
                 self._reply(message, image_url)
             self._reply_photo(message, image_url)
 
-    @command('Adjust image generation image size', 41)
+    @command('Select the image model to use', 41)
+    def imgmodel(self, message):
+        with self.user_manager.get_user_for_message(message) as user:
+            image_model = user.dalle_model
+        reply = f'Choose image model (currently {image_model})'
+        buttons = [[{
+            'text': model,
+            'callback_data': json.dumps({
+                'cmd': 'imgmodel',
+                'new_model': model
+            }),
+        } for model in ['dall-e-2', 'dall-e-3']]]
+        self._reply_keyboard(message, reply, buttons)
+
+    @callback('imgmodel')
+    def imgmodel_callback(self, message, data):
+        new_model = data['new_model']
+        with self.user_manager.get_user_for_message(message) as user:
+            user.dalle_model = new_model
+        self._reply(message, f'Changed image model to {new_model}.')
+
+    @command('Adjust image generation image size', 42)
     def imgsize(self, message):
         with self.user_manager.get_user_for_message(message) as user:
-            image_size = user.dalle_size
-        reply = f'Choose image size (currently {image_size}x{image_size})'
+            image_size = user.dalle_size()
+            available_image_sizes = user.available_dalle_sizes()
+        reply = f'Choose image size (currently {image_size})'
         buttons = [[{
-            'text': f'{size}x{size}',
+            'text': size,
             'callback_data': json.dumps({
                 'cmd': 'imgsize',
                 'size': size,
             }),
-        } for size in ['256', '512', '1024']]]
+        } for size in available_image_sizes]]
         self._reply_keyboard(message, reply, buttons)
 
-    @command('Switch sending image url', 42)
+    @callback('imgsize')
+    def imgsize_callback(self, message, data):
+        new_size = data['size']
+        with self.user_manager.get_user_for_message(message) as user:
+            user.set_dalle_size(new_size)
+        self._reply(message, f'Changed size to {new_size}.')
+
+    @command('Adjust image generation quality', 43)
+    def imgquality(self, message):
+        with self.user_manager.get_user_for_message(message) as user:
+            image_quality = user.dalle3_quality
+        reply = f'Choose image quality (currently {image_quality})'
+        buttons = [[{
+            'text': quality,
+            'callback_data': json.dumps({
+                'cmd': 'imgquality',
+                'quality': quality,
+            }),
+        } for quality in ['standard', 'hd']]]
+        self._reply_keyboard(message, reply, buttons)
+
+    @callback('imgquality')
+    def imgquality_callback(self, message, data):
+        new_quality = data['quality']
+        with self.user_manager.get_user_for_message(message) as user:
+            user.dalle3_quality = new_quality
+        self._reply(message, f'Changed quality to {new_quality}.')
+
+    @command('Adjust image generation style', 44)
+    def imgstyle(self, message):
+        with self.user_manager.get_user_for_message(message) as user:
+            image_style = user.dalle3_style
+        reply = f'Choose image quality (currently {image_style})'
+        buttons = [[{
+            'text': style,
+            'callback_data': json.dumps({
+                'cmd': 'imgstyle',
+                'style': style,
+            }),
+        } for style in ['natural', 'vivid']]]
+        self._reply_keyboard(message, reply, buttons)
+
+    @callback('imgstyle')
+    def imgstyle_callback(self, message, data):
+        new_style = data['style']
+        with self.user_manager.get_user_for_message(message) as user:
+            user.dalle3_style = new_style
+        self._reply(message, f'Changed style to {new_style}.')
+
+    @command('Switch sending revised image prompts', 45)
+    def imgprompt(self, message):
+        with self.user_manager.get_user_for_message(message) as user:
+            user.dalle_prompt = not user.dalle_prompt
+            new_prompt = user.dalle_prompt
+        if new_prompt:
+            self._reply(message, 'Changed setting. Will send revised image prompt.')
+        else:
+            self._reply(message, 'Changed setting. Will not send revised image prompt.')
+
+    @command('Switch sending image url', 46)
     def imgurl(self, message):
         with self.user_manager.get_user_for_message(message) as user:
             user.dalle_imgurl = not user.dalle_imgurl
@@ -426,11 +580,8 @@ class Telegram:
         data = json.loads(callback['data'])
         cmd = data['cmd']
         self._update_reply(message, message['text'])
-        if cmd == 'switch_thread':
-            new_thread_id = data['new_thread_id']
-            self.chatgpt_manager.get_chatgpt_for_message(message).switch_thread(new_thread_id)
-        elif cmd == 'imgsize':
-            new_size = data['size']
-            with self.user_manager.get_user_for_message(message) as user:
-                user.dalle_size = new_size
-            self._reply(message, f'Changed size to {new_size}x{new_size}.')
+        cmd_func = callbacks.get(cmd)
+        if cmd_func:
+            cmd_func(self, message, data)
+        else:
+            logger.warning('Unknown callback command %s', cmd)

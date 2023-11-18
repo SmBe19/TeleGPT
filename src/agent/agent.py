@@ -2,8 +2,6 @@ import datetime
 import logging
 import re
 
-import openai
-
 from agent.tools.python import Python
 from agent.tools.wikipedia import Wikipedia
 
@@ -29,7 +27,9 @@ logger = logging.getLogger(__name__)
 
 class Agent:
 
-    def __init__(self, tools=None):
+    def __init__(self, openai, model, tools=None):
+        self.openai = openai
+        self.model = model
         self.tools = ALL_TOOLS if tools is None else tools
 
     def process_prompt(self, prompt, limit=4, previous_messages=None, update_notifier=None):
@@ -72,8 +72,8 @@ class Agent:
         return None
 
     def _gpt(self, messages):
-        result = openai.ChatCompletion.create(
-            model='gpt-3.5-turbo',
+        result = self.openai.ChatCompletion.create(
+            model=self.model,
             messages=messages
         )
-        return result['choices'][0]['message']['content']
+        return result.choices[0].message.content

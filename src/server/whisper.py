@@ -2,7 +2,7 @@ import logging
 import os
 import tempfile
 
-import openai
+from openai import OpenAI
 import pydub
 import requests
 
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class Whisper:
 
     def __init__(self):
-        openai.api_key = os.environ['OPENAI_API_KEY']
+        self.openai = OpenAI(api_key=os.environ['OPENAI_API_KEY'])
 
     def transcribe_url(self, url):
         with tempfile.TemporaryDirectory() as tempdir:
@@ -27,6 +27,6 @@ class Whisper:
             pydub.AudioSegment.from_file(original_file).export(destination_file, format='mp3')
             logger.info('Start transcribing')
             with open(destination_file, 'rb') as f:
-                transcript = openai.Audio.transcribe('whisper-1', f)
+                transcript = self.openai.audio.transcriptions.create(file=f, model='whisper-1')
             logger.info('Finished transcribing')
-            return transcript['text']
+            return transcript.text

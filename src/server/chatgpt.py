@@ -5,7 +5,7 @@ import threading
 import time
 from queue import Queue, Empty
 
-import openai
+from openai import OpenAI
 
 from agent.agent import Agent
 from agent.tools.python import Python
@@ -27,7 +27,7 @@ class ChatGPT:
         self.message_processing_thread = None
         self.data = {}
         self.current_thread = {}
-        openai.api_key = os.environ['OPENAI_API_KEY']
+        self.openai = OpenAI(api_key=os.environ['OPENAI_API_KEY'])
         self._load_data()
 
     def is_active(self):
@@ -83,8 +83,14 @@ class ChatGPT:
     def set_system_message(self, message):
         self.queue.put(lambda: self._set_system_message(message))
 
+    def set_model(self, model):
+        self.queue.put(lambda: self._set_model(model))
+
     def get_current_system_message(self):
         return self.current_thread['init_message']
+
+    def get_current_model(self):
+        return self.current_thread['model']
 
     def get_current_thread_id(self):
         return self.data['current_thread_id']
@@ -165,17 +171,17 @@ class ChatGPT:
             'role': 'user',
             'content': 'Very short topic of our conversation? Only include the topic.'
         })
-        response = openai.ChatCompletion.create(
+        response = self.openai.chat.completions.create(
             model=self.current_thread['model'],
             messages=messages,
             logit_bias={
                 # Personal
-                30228: -1,
+                "30228": -1,
                 # Assistant
-                48902: -2,
+                "48902": -2,
             }
         )
-        response = response['choices'][0]['message']['content']
+        response = response.choices[0].message.content
         new_name = response.strip('".')
         old_name = self.data['threads'][self.get_current_thread_id()]['name']
         self.data['threads'][self.get_current_thread_id()]['name'] = new_name
@@ -209,11 +215,11 @@ class ChatGPT:
                        'Include all details a large language model needs to know to be able to answer questions '
                        'about the text only using the summary.'
         })
-        response = openai.ChatCompletion.create(
+        response = self.openai.chat.completions.create(
             model=self.current_thread['model'],
             messages=messages,
         )
-        summary = response['choices'][0]['message']['content']
+        summary = response.choices[0].message.content
         self.current_thread['summaries'].append({
             'last_message': last_message_in_all_messages,
             'summary': summary,
@@ -232,14 +238,14 @@ class ChatGPT:
         logger.info('Send new message to ChatGPT.')
         self.current_thread['messages'].append({'role': 'user', 'content': message})
         messages = self._get_current_messages()
-        response = openai.ChatCompletion.create(
+        response = self.openai.chat.completions.create(
             model=self.current_thread['model'],
             messages=messages,
         )
         logger.info('Got response from ChatGPT.')
-        logger.debug('Usage for ChatGPT: %s tokens by chat %s', response['usage']['total_tokens'], self.user.chatid)
-        self.current_thread['total_tokens'] += response['usage']['total_tokens']
-        response_text = response['choices'][0]['message']['content']
+        logger.debug('Usage for ChatGPT: %s tokens by chat %s', response.usage.total_tokens, self.user.chatid)
+        self.current_thread['total_tokens'] += response.usage.total_tokens
+        response_text = response.choices[0].message.content
         self.current_thread['messages'].append({'role': 'assistant', 'content': response_text})
         self._save_current_thread()
         self.user.send_message(response_text)
@@ -331,10 +337,14 @@ class ChatGPT:
             self.user.send_message(f'*{author}*:\n{content}')
 
     def _agent(self, prompt):
-        my_agent = Agent({
-            'PYTHON': Python(require_manual_approval=False),
-            'WIKIPEDIA': Wikipedia()
-        })
+        my_agent = Agent(
+            self.openai,
+            self.current_thread['model'],
+            {
+                'PYTHON': Python(require_manual_approval=False),
+                'WIKIPEDIA': Wikipedia()
+            }
+        )
         previous_messages = self.current_thread['messages'][self._get_current_messages_start():]
         logger.info('Start new agent.')
         response = my_agent.process_prompt(
@@ -355,6 +365,10 @@ class ChatGPT:
     def _set_system_message(self, new_message):
         self.current_thread['init_message'] = new_message
         self.user.send_message('Updated system message.')
+
+    def _set_model(self, model):
+        self.current_thread['model'] = model
+        self.user.send_message(f'Changed model to {model}.')
 
     def _process_messages(self):
         while True:
