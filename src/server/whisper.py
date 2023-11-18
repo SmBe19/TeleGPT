@@ -30,3 +30,16 @@ class Whisper:
                 transcript = self.openai.audio.transcriptions.create(file=f, model='whisper-1')
             logger.info('Finished transcribing')
             return transcript.text
+
+    def create_tts(self, message, model, voice, callback):
+        with tempfile.TemporaryDirectory() as tempdir:
+            response = self.openai.audio.speech.create(
+                model=model,
+                input=message,
+                voice=voice,
+                response_format='opus',
+            )
+            voice_file = os.path.join(tempdir, 'voice.ogg')
+            with open(voice_file, 'wb') as f:
+                f.write(response.content)
+            callback(voice_file)

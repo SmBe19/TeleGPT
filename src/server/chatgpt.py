@@ -248,7 +248,7 @@ class ChatGPT:
         response_text = response.choices[0].message.content
         self.current_thread['messages'].append({'role': 'assistant', 'content': response_text})
         self._save_current_thread()
-        self.user.send_message(response_text)
+        self.user.send_reply(response_text)
         if self.data['threads'][self.get_current_thread_id()]['name'] == 'Unnamed thread' and \
                 len(self.current_thread['messages']) >= MESSAGES_UNTIL_AUTONAME * 2:
             self._suggest_thread_name(silent=True)

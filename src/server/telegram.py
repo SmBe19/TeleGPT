@@ -110,10 +110,18 @@ class TelegramUser:
         self.dalle3_style = 'natural'
         self.dalle_prompt = False
         self.dalle_imgurl = False
+        self.tts_model = 'tts-1'
+        self.tts_voice = 'echo'
+        self.tts_all = False
         self.open_command = None
 
     def send_message(self, text):
         self.telegram._send_message(self.chatid, text)
+
+    def send_reply(self, text):
+        self.send_message(text)
+        if self.tts_all:
+            self.telegram.whisper.create_tts(text, self.tts_model, self.tts_voice, lambda f: self.telegram._send_voice(self.chatid, f))
 
     def dalle_size(self):
         if self.dalle_model == 'dall-e-2':
@@ -280,7 +288,7 @@ class Telegram:
                 'new_model': model
             }),
         } for model in ['gpt-3.5-turbo', 'gpt-4', 'gpt-4-1106-preview']]]
-        self._reply_keyboard(message, reply, buttons)
+        self._reply_keyboard(message, reply, self._with_cancel_button(buttons))
 
     @callback('model')
     def model_callback(self, message, data):
@@ -363,7 +371,7 @@ class Telegram:
                 'new_model': model
             }),
         } for model in ['dall-e-2', 'dall-e-3']]]
-        self._reply_keyboard(message, reply, buttons)
+        self._reply_keyboard(message, reply, self._with_cancel_button(buttons))
 
     @callback('imgmodel')
     def imgmodel_callback(self, message, data):
@@ -385,7 +393,7 @@ class Telegram:
                 'size': size,
             }),
         } for size in available_image_sizes]]
-        self._reply_keyboard(message, reply, buttons)
+        self._reply_keyboard(message, reply, self._with_cancel_button(buttons))
 
     @callback('imgsize')
     def imgsize_callback(self, message, data):
@@ -406,7 +414,7 @@ class Telegram:
                 'quality': quality,
             }),
         } for quality in ['standard', 'hd']]]
-        self._reply_keyboard(message, reply, buttons)
+        self._reply_keyboard(message, reply, self._with_cancel_button(buttons))
 
     @callback('imgquality')
     def imgquality_callback(self, message, data):
@@ -427,7 +435,7 @@ class Telegram:
                 'style': style,
             }),
         } for style in ['natural', 'vivid']]]
-        self._reply_keyboard(message, reply, buttons)
+        self._reply_keyboard(message, reply, self._with_cancel_button(buttons))
 
     @callback('imgstyle')
     def imgstyle_callback(self, message, data):
@@ -456,6 +464,71 @@ class Telegram:
         else:
             self._reply(message, 'Changed setting. Will not send image url.')
 
+    @command('Transform text to speech', 50)
+    def tts(self, message):
+        prompt = self._get_command_argument(message, '/tts')
+        if not prompt:
+            self._reply(message, 'Please enter the text to synthesize.')
+            with self.user_manager.get_user_for_message(message) as user:
+                user.open_command = self.tts
+        else:
+            with self.user_manager.get_user_for_message(message) as user:
+                tts_model = user.tts_model
+                tts_voice = user.tts_voice
+            self.whisper.create_tts(prompt, tts_model, tts_voice, lambda f: self._reply_voice(message, f))
+
+    @command('Select the tts model to use', 51)
+    def ttsmodel(self, message):
+        with self.user_manager.get_user_for_message(message) as user:
+            tts_model = user.tts_model
+        reply = f'Choose tts model (currently {tts_model})'
+        buttons = [[{
+            'text': model,
+            'callback_data': json.dumps({
+                'cmd': 'ttsmodel',
+                'new_model': model
+            }),
+        } for model in ['tts-1', 'tts-1-hd']]]
+        self._reply_keyboard(message, reply, self._with_cancel_button(buttons))
+
+    @callback('ttsmodel')
+    def ttsmodel_callback(self, message, data):
+        new_model = data['new_model']
+        with self.user_manager.get_user_for_message(message) as user:
+            user.tts_model = new_model
+        self._reply(message, f'Changed tts model to {new_model}.')
+
+    @command('Adjust tts voice', 52)
+    def ttsvoice(self, message):
+        with self.user_manager.get_user_for_message(message) as user:
+            tts_voice = user.tts_voice
+        reply = f'Choose tts voice (currently {tts_voice})'
+        buttons = [[{
+            'text': voice,
+            'callback_data': json.dumps({
+                'cmd': 'ttsvoice',
+                'voice': voice,
+            }),
+        } for voice in ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']]]
+        self._reply_keyboard(message, reply, self._with_cancel_button(buttons))
+
+    @callback('ttsvoice')
+    def ttsvoice_callback(self, message, data):
+        new_voice = data['voice']
+        with self.user_manager.get_user_for_message(message) as user:
+            user.tts_voice = new_voice
+        self._reply(message, f'Changed tts voice to {new_voice}.')
+
+    @command('Switch creating tts for all assistant replies', 53)
+    def ttsall(self, message):
+        with self.user_manager.get_user_for_message(message) as user:
+            user.tts_all = not user.tts_all
+            new_tts_all = user.tts_all
+        if new_tts_all:
+            self._reply(message, 'Changed setting. Will send tts for all assistant replies.')
+        else:
+            self._reply(message, 'Changed setting. Will not send tts for all assistant replies.')
+
     def _handle_normal_message(self, message):
         self._chat_action(message, 'typing')
         self.chatgpt_manager.get_chatgpt_for_message(message).submit_message(message['text'])
@@ -481,10 +554,13 @@ class Telegram:
                     return text[entity_end:].strip()
         return text
 
-    def _post(self, endpoint, **data):
+    def _post(self, endpoint, files=None, **data):
         if not data:
             data = {}
-        response = requests.post(f'https://api.telegram.org/bot{self.bot_token}/{endpoint}', json=data).json()
+        if files:
+            response = requests.post(f'https://api.telegram.org/bot{self.bot_token}/{endpoint}', data=data, files=files).json()
+        else:
+            response = requests.post(f'https://api.telegram.org/bot{self.bot_token}/{endpoint}', json=data).json()
         if not response['ok']:
             logger.error('Error calling Telegram API: %s', response['description'])
             raise TelegramError()
@@ -501,6 +577,11 @@ class Telegram:
     def _send_photo(self, chatid, photo_url, **kwargs):
         return self._post('sendPhoto', chat_id=chatid, photo=photo_url, **kwargs)
 
+    def _send_voice(self, chatid, voice_file, **kwargs):
+        logging.info('Sending voice file %s to chat %s', voice_file, chatid)
+        with open(voice_file, 'rb') as f:
+            return self._post('sendVoice', chat_id=chatid, files={'voice': f}, **kwargs)
+
     def _reply(self, message, reply):
         return self._send_message(message['chat']['id'], reply)
 
@@ -511,6 +592,9 @@ class Telegram:
 
     def _reply_photo(self, message, photo_url):
         self._send_photo(message['chat']['id'], photo_url)
+
+    def _reply_voice(self, message, voice_file):
+        self._send_voice(message['chat']['id'], voice_file)
 
     def _chat_action(self, message, action):
         self._post('sendChatAction', chat_id=message['chat']['id'], action=action)
@@ -583,5 +667,7 @@ class Telegram:
         cmd_func = callbacks.get(cmd)
         if cmd_func:
             cmd_func(self, message, data)
+        elif cmd == 'cancel':
+            pass
         else:
             logger.warning('Unknown callback command %s', cmd)
