@@ -287,7 +287,7 @@ class Telegram:
                 'cmd': 'model',
                 'new_model': model
             }),
-        } for model in ['gpt-3.5-turbo', 'gpt-4', 'gpt-4-1106-preview']]]
+        } for model in ['gpt-3.5-turbo', 'gpt-3.5-turbo-0125', 'gpt-4', 'gpt-4-turbo', 'gpt-4o']]]
         self._reply_keyboard(message, reply, self._with_cancel_button(buttons))
 
     @callback('model')

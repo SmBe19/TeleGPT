@@ -265,7 +265,7 @@ class ChatGPT:
         }
         self.data['current_thread_id'] = thread_id
         self.current_thread = {
-            'model': 'gpt-3.5-turbo',
+            'model': 'gpt-3.5-turbo-0125',
             'total_tokens': 0,
             'init_message': SYSTEM_MESSAGES[system_message_template].format(
                 assistant_name=self.user.telegram.assistant_name),
