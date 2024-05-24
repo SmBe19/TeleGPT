@@ -16,23 +16,20 @@ class Python(Tool):
         self.require_manual_approval = require_manual_approval
 
     def description(self):
-        return 'Execute python code.'
+        return 'Execute python code and get the result after execution. Cannot install any packages from pip.'
 
-    def usage(self):
-        return 'Include [TOOL PYTHON]<code>[/TOOL] in your response and I will provide you ' \
-               'with the result of the code after execution. I am forbidden to install any packages from pip.'
+    def parameters(self):
+        return {
+            'code': 'The code to execute.'
+        }
 
-    def examples(self):
-        return [
-            '[TOOL PYTHON]print(256*2)[/TOOL]',
-            '[TOOL PYTHON]a = 5;b = 7; print(a**b)[/TOOL]',
-            '[TOOL PYTHON]p = (3/7)**3\nresult = round(p * 100, 1)\nprint(result)[/TOOL]',
-            '[TOOL PYTHON]import datetime\nnow = datetime.datetime.now()\nprint(now.strftime("%H:%M:%S"))[/TOOL]'
-        ]
+    def validate_input(self, **kwargs):
+        return 'code' in kwargs
 
-    def process(self, prompt):
-        logger.info('Assistant wants to execute the following code:\n%s', prompt)
-        if not self._sanitize_code(prompt):
+    def process(self, **kwargs):
+        code = kwargs['code']
+        logger.info('Assistant wants to execute the following code:\n%s', code)
+        if not self._sanitize_code(code):
             logger.warning('Code execution was automatically blocked')
             return '<execution blocked>'
         if self.require_manual_approval:
@@ -40,12 +37,12 @@ class Python(Tool):
             if answer.lower() != 'y':
                 logger.warning('Code execution blocked')
                 return '<execution blocked>'
-        return self._execute_code(prompt)
+        return self._execute_code(code)
 
-    def format_result(self, prompt, result):
+    def format_result(self, result, **kwargs):
         if isinstance(result, Exception):
-            f'{prompt}\nThis code failed to run: {result}\nPlease fix the code and try again.'
-        return f'{prompt}\nThe result of this code is {result}'
+            f'This code failed to run: {result}\nPlease fix the code and try again.'
+        return result
 
     def _is_allowed_module(self, module):
         logger.info('Check import for module %s', module)

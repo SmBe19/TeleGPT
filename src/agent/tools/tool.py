@@ -8,17 +8,17 @@ class Tool(ABC):
         pass
 
     @abstractmethod
-    def usage(self):
+    def parameters(self):
         pass
 
     @abstractmethod
-    def examples(self):
+    def validate_input(self, **kwargs):
         pass
 
     @abstractmethod
-    def process(self, prompt):
+    def process(self, **kwargs):
         pass
 
     @abstractmethod
-    def format_result(self, prompt, result):
+    def format_result(self, result, **kwargs):
         pass

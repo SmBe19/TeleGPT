@@ -1,4 +1,5 @@
 import datetime
+import json
 import logging
 import re
 
@@ -7,15 +8,8 @@ from agent.tools.wikipedia import Wikipedia
 
 INITIAL_PROMPT = '' \
                  'You are a friendly assistant.\n' \
-                 'The current date is {date}.\n' \
-                 'Knowledge data cuttoff date: 2021-09-01\n' \
-                 'You have several tools at your disposal to complete your task.\n' \
-                 'You do not need to ask for permission to use the tools.\n' \
-                 'Always use a tool if you are not completely sure about the answer.\n' \
-                 'When you use a tool, do not include any explanation. End your output after the tool usage.\n' \
-                 'The available tools are described below.'
+                 'The current date is {date}.\n'
 
-TOOL_SEARCH = re.compile(r'\[TOOL (?P<tool>[A-Z]+)](?P<arg>.*?)\[/TOOL]', re.DOTALL)
 ALL_TOOLS = {
     'PYTHON': Python(require_manual_approval=False),
     # 'SEARCH': Search(),
@@ -34,46 +28,72 @@ class Agent:
 
     def process_prompt(self, prompt, limit=4, previous_messages=None, update_notifier=None):
         logger.info('Start prompt "%s"', prompt)
-        system_prompt = INITIAL_PROMPT.format(date=datetime.datetime.now().strftime("%Y-%m-%d"))
-        for name, tool in self.tools.items():
-            system_prompt += '\n\n# ' + name + \
-                             '\nDescription: ' + tool.description() + \
-                             '\nUsage: ' + tool.usage() + \
-                             '\nExamples:\n' + '\n'.join(tool.examples())
         messages = [
-            {'role': 'system', 'content': system_prompt}
+            {'role': 'system', 'content': INITIAL_PROMPT.format(date=datetime.datetime.now().strftime("%Y-%m-%d"))}
         ]
         if previous_messages is None:
             previous_messages = []
         for _ in range(limit):
             response = self._gpt(messages + previous_messages + [{'role': 'user', 'content': prompt}])
+            messages.append(response)
             logger.info('Got response: %s', response)
 
-            match = TOOL_SEARCH.search(response)
-            if not match:
+            if not response.tool_calls:
                 logger.info('Got final response')
-                return response
+                return response.content
 
-            logger.info('Found tool usage for tool %s', match.group('tool'))
-            if update_notifier:
-                update_notifier('[Use tool ' + match.group('tool') + ']')
+            if response.content and update_notifier:
+                update_notifier(response.content)
 
-            tool = self.tools.get(match.group('tool'))
-            if not tool:
-                logger.warning("Tool %s not found", match.group('tool'))
-                messages.append({'role': 'system', 'content': 'The tool "' + match.group('tool') + '" does not exist.'})
-                continue
+            for tool_call in response.tool_calls:
+                tool_name = tool_call.function.name
+                logger.info('Found tool usage for tool %s', tool_name)
+                logger.debug('Tool inputs for tool %s are:\n%s', tool_name, tool_call.function.arguments)
+                if update_notifier:
+                    update_notifier('[Use tool ' + tool_name + ' with arguments ' + tool_call.function.arguments + ']')
 
-            result = tool.process(match.group('arg'))
-            logger.info('Tool result: %s', result)
-            messages.append({'role': 'system', 'content': tool.format_result(match.group(), result)})
+                tool = self.tools.get(tool_name)
+                if not tool:
+                    logger.warning("Tool %s not found", tool_name)
+                    continue
+
+                try:
+                    arguments = json.loads(tool_call.function.arguments)
+                except:
+                    logger.warning("Input to tool %s is not valid json: %s", tool_name, tool_call.function.arguments)
+                    messages.append({'role': 'tool', 'tool_call_id': tool_call.id, 'name': tool_name, 'content': 'Invalid json input, please try again'})
+                    continue
+                if not tool.validate_input(**arguments):
+                    logger.warning("Input to tool %s is invalid: %s", tool_name, tool_call.function.arguments)
+                    messages.append({'role': 'tool', 'tool_call_id': tool_call.id, 'name': tool_name, 'content': 'Invalid inputs, please try again'})
+                    continue
+                result = tool.process(**arguments)
+                logger.info('Tool result: %s', result)
+                messages.append({'role': 'tool', 'tool_call_id': tool_call.id, 'name': tool_name, 'content': tool.format_result(result, **arguments)})
 
         logger.warning('Did not find answer within %s steps, aborted', limit)
         return None
 
     def _gpt(self, messages):
-        result = self.openai.ChatCompletion.create(
+        result = self.openai.chat.completions.create(
             model=self.model,
-            messages=messages
+            messages=messages,
+            tools=[{
+                'type': 'function',
+                'function': {
+                    'name': tool_name,
+                    'description': tool.description(),
+                    'parameters': {
+                        'type': 'object',
+                        'properties': {
+                            key: {
+                                'type': 'string',
+                                'description': value
+                            } for key, value in tool.parameters().items()
+                        },
+                        'required': list(tool.parameters().keys()),
+                    }
+                }
+            } for tool_name, tool in self.tools.items()]
         )
-        return result.choices[0].message.content
+        return result.choices[0].message

@@ -6,20 +6,18 @@ class Search(Tool):
     def description(self):
         return 'Search the internet for keywords.'
 
-    def usage(self):
-        return 'Include [TOOL SEARCH]<keywords>[/TOOL] in your response and I will provide you ' \
-               'with the results of this search.'
+    def parameters(self):
+        return {
+            'keyword': 'The keyword to search.'
+        }
 
-    def examples(self):
-        return [
-            '[TOOL SEARCH]Population Glasgow[/TOOL]',
-            '[TOOL SEARCH]Election results France[/TOOL]'
-        ]
+    def validate_input(self, **kwargs):
+        return 'keyword' in kwargs
 
-    def process(self, prompt):
-        print('Assistant wants to search for', prompt)
+    def process(self, **kwargs):
+        print('Assistant wants to search for', kwargs['keyword'])
         answer = input('Please enter result: ')
         return answer
 
-    def format_result(self, prompt, result):
-        return prompt + '\nHere are the search results: ' + result
+    def format_result(self, result, **kwargs):
+        return result
