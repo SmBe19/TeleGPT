@@ -10,8 +10,9 @@ from openai import OpenAI
 from agent.agent import Agent
 from agent.tools.python import Python
 from agent.tools.wikipedia import Wikipedia
-from consts import MAX_WORKER_IDLE_SECONDS, DATA_DIR, SYSTEM_MESSAGES, MESSAGES_UNTIL_AUTONAME, HISTORY_TOKEN_LIMIT, \
-    MIN_HISTORY_CONTEXT, TARGET_HISTORY_CONTEXT
+from consts import MAX_WORKER_IDLE_SECONDS, DATA_DIR, SYSTEM_MESSAGES, MESSAGES_UNTIL_AUTONAME, \
+    DEFAULT_HISTORY_TOKEN_LIMIT, \
+    MIN_HISTORY_CONTEXT, TARGET_HISTORY_CONTEXT, HISTORY_TOKEN_LIMIT, GPT_MODELS
 
 logger = logging.getLogger(__name__)
 
@@ -172,7 +173,7 @@ class ChatGPT:
             'content': 'Very short topic of our conversation? Only include the topic.'
         })
         response = self.openai.chat.completions.create(
-            model=self.current_thread['model'],
+            model=self.get_current_model(),
             messages=messages,
             logit_bias={
                 # Personal
@@ -216,7 +217,7 @@ class ChatGPT:
                        'about the text only using the summary.'
         })
         response = self.openai.chat.completions.create(
-            model=self.current_thread['model'],
+            model=self.get_current_model(),
             messages=messages,
         )
         summary = response.choices[0].message.content
@@ -231,7 +232,7 @@ class ChatGPT:
         messages = self._get_current_messages()
         token_estimate = sum(len(x['content'].split()) for x in messages) * 1.25
         logger.info(f'The current estimated context length is {token_estimate} tokens')
-        if token_estimate > HISTORY_TOKEN_LIMIT:
+        if token_estimate > HISTORY_TOKEN_LIMIT.get(self.get_current_model(), DEFAULT_HISTORY_TOKEN_LIMIT):
             self._add_summary()
 
     def _process_message(self, message):
@@ -239,7 +240,7 @@ class ChatGPT:
         self.current_thread['messages'].append({'role': 'user', 'content': message})
         messages = self._get_current_messages()
         response = self.openai.chat.completions.create(
-            model=self.current_thread['model'],
+            model=self.get_current_model(),
             messages=messages,
         )
         logger.info('Got response from ChatGPT.')
@@ -265,7 +266,7 @@ class ChatGPT:
         }
         self.data['current_thread_id'] = thread_id
         self.current_thread = {
-            'model': 'gpt-3.5-turbo-0125',
+            'model': GPT_MODELS[0],
             'total_tokens': 0,
             'init_message': SYSTEM_MESSAGES[system_message_template].format(
                 assistant_name=self.user.telegram.assistant_name),

@@ -7,6 +7,7 @@ import time
 
 import requests
 
+from consts import GPT_MODELS
 from server.chatgpt import ChatGPT
 from server.dalle import DallE
 from server.whisper import Whisper
@@ -287,7 +288,7 @@ class Telegram:
                 'cmd': 'model',
                 'new_model': model
             }),
-        } for model in ['gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo', 'gpt-4o']]]
+        } for model in GPT_MODELS]]
         self._reply_keyboard(message, reply, self._with_cancel_button(buttons))
 
     @callback('model')
