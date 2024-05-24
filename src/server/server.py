@@ -10,7 +10,7 @@ from multiprocessing.pool import ThreadPool
 import dotenv
 
 from consts import SOCKET_NAME, DATA_DIR
-from server.telegram import Telegram
+from server.telegram_bot import Telegram
 
 dotenv.load_dotenv('secrets.env')
 
