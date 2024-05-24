@@ -101,6 +101,11 @@ class Telegram(
             raise TelegramError()
         return response['result']
 
+    def _get_file_url(self, file_id):
+        file_info = self._post('getFile', file_id=file_id)
+        file_path = file_info['file_path']
+        return f'https://api.telegram.org/file/bot{self.bot_token}/{file_path}'
+
     def _send_message(self, chatid, message, **kwargs):
         # TODO support parse_mode='MarkdownV2'
         return self._post('sendMessage', chat_id=chatid, text=message, **kwargs)
@@ -142,6 +147,8 @@ class Telegram(
     def _handle_message(self, message):
         if 'text' in message:
             self._handle_text_message(message)
+        elif 'photo' in message:
+            self._handle_photo_message(message)
         elif 'audio' in message:
             self._handle_audio_message(message)
         elif 'voice' in message:
@@ -149,19 +156,17 @@ class Telegram(
 
     def _handle_normal_message(self, message):
         self._chat_action(message, 'typing')
-        self.chatgpt_manager.get_chatgpt_for_message(message).submit_message(message['text'])
+        self.chatgpt_manager.get_chatgpt_for_message(message).submit_text_message(message['text'])
 
     def _handle_audio_file(self, message, file_id):
-        file_info = self._post('getFile', file_id=file_id)
-        file_path = file_info['file_path']
-        full_url = f'https://api.telegram.org/file/bot{self.bot_token}/{file_path}'
-        transcript = self.whisper.transcribe_url(full_url)
+        audio_url = self._get_file_url(file_id)
+        transcript = self.whisper.transcribe_url(audio_url)
         if not transcript:
             self._reply(message, 'Sorry, I did not understand this.')
             return
         self._reply(message, f'*Transcript*\n\n{transcript}')
         self._chat_action(message, 'typing')
-        self.chatgpt_manager.get_chatgpt_for_message(message).submit_message(transcript)
+        self.chatgpt_manager.get_chatgpt_for_message(message).submit_text_message(transcript)
 
     def _handle_text_message(self, message):
         logger.info('Handle text message')
@@ -187,6 +192,29 @@ class Telegram(
             open_command(message)
             return
         self._handle_normal_message(message)
+
+    def _handle_photo_message(self, message):
+        logger.info('Handle photo message')
+        self._chat_action(message, 'typing')
+        max_size = 0
+        max_photo = None
+        min_size_over_512 = 1e18
+        min_photo_over_512 = None
+        for photo in message['photo']:
+            size = min(photo['width'], photo['height'])
+            if size > max_size:
+                max_size = size
+                max_photo = photo
+            if size >= 512 and size < min_size_over_512:
+                min_size_over_512 = size
+                min_photo_over_512 = photo
+        target_detail = self.chatgpt_manager.get_chatgpt_for_message(message).get_current_vision_detail()
+        if target_detail == 'low' and min_photo_over_512 is not None:
+            photo = min_photo_over_512
+        else:
+            photo = max_photo
+        photo_url = self._get_file_url(photo['file_id'])
+        self.chatgpt_manager.get_chatgpt_for_message(message).submit_image_message(photo_url, message.get('caption'))
 
     def _handle_audio_message(self, message):
         logger.info('Handle audio message')

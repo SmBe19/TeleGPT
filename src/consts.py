@@ -18,3 +18,4 @@ HISTORY_TOKEN_LIMIT = {
     'gpt-4-turbo': 120000,
     'gpt-4o': 120000,
 }
+VISION_ENABLED = ['gpt-4-turbo', 'gpt-4o']

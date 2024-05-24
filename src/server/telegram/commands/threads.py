@@ -9,7 +9,7 @@ class TelegramCommandsThreads(TelegramCommands):
         template = self._get_command_argument(message, '/new')
         self.chatgpt_manager.get_chatgpt_for_message(message).new_thread(template or 'default')
 
-    @command('Rename the current thread', 17)
+    @command('Rename the current thread', 18)
     def rename(self, message):
         new_name = self._get_command_argument(message, '/rename')
         if not new_name:
@@ -23,7 +23,7 @@ class TelegramCommandsThreads(TelegramCommands):
     def autoname(self, message):
         self.chatgpt_manager.get_chatgpt_for_message(message).rename_thread_with_suggestion()
 
-    @command('Finish the current thread', 18)
+    @command('Finish the current thread', 19)
     def finish(self, message):
         self.chatgpt_manager.get_chatgpt_for_message(message).finish_thread()
 

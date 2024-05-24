@@ -37,3 +37,21 @@ class TelegramCommandsGptSettings(TelegramCommands):
     def model_callback(self, message, data):
         new_model = data['new_model']
         self.chatgpt_manager.get_chatgpt_for_message(message).set_model(new_model)
+
+    @command('Select the vision detail to use', 17)
+    def visiondetail(self, message):
+        current_vision_detail = self.chatgpt_manager.get_chatgpt_for_message(message).get_current_vision_detail()
+        reply = f'Choose the new vision detail (currently {current_vision_detail})'
+        buttons = [[{
+            'text': detail,
+            'callback_data': json.dumps({
+                'cmd': 'visiondetail',
+                'new_vision_detail': detail
+            }),
+        } for detail in ['low', 'high', 'auto']]]
+        self._reply_keyboard(message, reply, self._with_cancel_button(buttons))
+
+    @callback('visiondetail')
+    def visiondetail_callback(self, message, data):
+        new_vision_detail = data['new_vision_detail']
+        self.chatgpt_manager.get_chatgpt_for_message(message).set_vision_detail(new_vision_detail)

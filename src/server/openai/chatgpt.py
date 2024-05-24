@@ -12,7 +12,7 @@ from agent.tools.python import Python
 from agent.tools.wikipedia import Wikipedia
 from consts import MAX_WORKER_IDLE_SECONDS, DATA_DIR, SYSTEM_MESSAGES, MESSAGES_UNTIL_AUTONAME, \
     DEFAULT_HISTORY_TOKEN_LIMIT, \
-    MIN_HISTORY_CONTEXT, TARGET_HISTORY_CONTEXT, HISTORY_TOKEN_LIMIT, GPT_MODELS
+    MIN_HISTORY_CONTEXT, TARGET_HISTORY_CONTEXT, HISTORY_TOKEN_LIMIT, GPT_MODELS, VISION_ENABLED
 
 logger = logging.getLogger(__name__)
 
@@ -50,8 +50,11 @@ class ChatGPT:
         self._save_current_thread()
         self._save_root_data()
 
-    def submit_message(self, text):
-        self.queue.put(lambda: self._process_message(text))
+    def submit_text_message(self, text):
+        self.queue.put(lambda: self._process_text_message(text))
+
+    def submit_image_message(self, image_url, caption):
+        self.queue.put(lambda: self._process_image(image_url, caption))
 
     def get_thread_names(self):
         return {thread_id: value['name'] for thread_id, value in
@@ -87,11 +90,17 @@ class ChatGPT:
     def set_model(self, model):
         self.queue.put(lambda: self._set_model(model))
 
+    def set_vision_detail(self, detail):
+        self.queue.put(lambda: self._set_vision_detail(detail))
+
     def get_current_system_message(self):
         return self.current_thread['init_message']
 
     def get_current_model(self):
         return self.current_thread['model']
+
+    def get_current_vision_detail(self):
+        return self.current_thread['vision_detail']
 
     def get_current_thread_id(self):
         return self.data['current_thread_id']
@@ -230,13 +239,12 @@ class ChatGPT:
 
     def _check_summary_needed(self):
         messages = self._get_current_messages()
-        token_estimate = sum(len(x['content'].split()) for x in messages) * 1.25
+        token_estimate = sum(len(x['content'].split()) for x in messages if isinstance(x['content'], str)) * 1.25
         logger.info(f'The current estimated context length is {token_estimate} tokens')
         if token_estimate > HISTORY_TOKEN_LIMIT.get(self.get_current_model(), DEFAULT_HISTORY_TOKEN_LIMIT):
             self._add_summary()
 
     def _process_message(self, message):
-        logger.info('Send new message to ChatGPT.')
         self.current_thread['messages'].append({'role': 'user', 'content': message})
         messages = self._get_current_messages()
         response = self.openai.chat.completions.create(
@@ -255,6 +263,20 @@ class ChatGPT:
             self._suggest_thread_name(silent=True)
         self._check_summary_needed()
 
+    def _process_text_message(self, text):
+        logger.info('Send new message to ChatGPT.')
+        self._process_message(text)
+
+    def _process_image(self, image_url, caption):
+        if self.get_current_model() not in VISION_ENABLED:
+            self.user.send_reply('Sorry, this model does not support vision.')
+            return
+        logger.info('Send new image message to ChatGPT.')
+        message = [{'type': 'image_url', 'image_url': {'url': image_url, 'detail': self.get_current_vision_detail()}}]
+        if caption:
+            message += [{'type': 'text', 'text': caption}]
+        self._process_message(message)
+
     def _new_thread(self, system_message_template='default', silent=False):
         if system_message_template not in SYSTEM_MESSAGES:
             system_message_template = 'default'
@@ -267,6 +289,7 @@ class ChatGPT:
         self.data['current_thread_id'] = thread_id
         self.current_thread = {
             'model': GPT_MODELS[0],
+            'vision_detail': 'low',
             'total_tokens': 0,
             'init_message': SYSTEM_MESSAGES[system_message_template].format(
                 assistant_name=self.user.telegram.assistant_name),
@@ -370,6 +393,10 @@ class ChatGPT:
     def _set_model(self, model):
         self.current_thread['model'] = model
         self.user.send_message(f'Changed model to {model}.')
+
+    def _set_vision_detail(self, detail):
+        self.current_thread['vision_detail'] = detail
+        self.user.send_message(f'Changed vision detail to {detail}.')
 
     def _process_messages(self):
         while True:
