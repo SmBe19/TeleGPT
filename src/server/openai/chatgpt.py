@@ -11,8 +11,8 @@ from agent.agent import Agent
 from agent.tools.python import Python
 from agent.tools.wikipedia import Wikipedia
 from consts import MAX_WORKER_IDLE_SECONDS, DATA_DIR, SYSTEM_MESSAGES, MESSAGES_UNTIL_AUTONAME, \
-    DEFAULT_HISTORY_TOKEN_LIMIT, \
-    MIN_HISTORY_CONTEXT, TARGET_HISTORY_CONTEXT, HISTORY_TOKEN_LIMIT, GPT_MODELS, VISION_ENABLED
+    DEFAULT_HISTORY_TOKEN_LIMIT, MIN_HISTORY_CONTEXT, TARGET_HISTORY_CONTEXT, HISTORY_TOKEN_LIMIT, \
+    GPT_MODELS, DEFAULT_GPT_MODEL, VISION_ENABLED
 
 logger = logging.getLogger(__name__)
 
@@ -288,7 +288,7 @@ class ChatGPT:
         }
         self.data['current_thread_id'] = thread_id
         self.current_thread = {
-            'model': GPT_MODELS[0],
+            'model': DEFAULT_GPT_MODEL,
             'vision_detail': 'low',
             'total_tokens': 0,
             'init_message': SYSTEM_MESSAGES[system_message_template].format(

@@ -10,12 +10,14 @@ SYSTEM_MESSAGES = {
 MESSAGES_UNTIL_AUTONAME = 4
 MIN_HISTORY_CONTEXT = 2
 TARGET_HISTORY_CONTEXT = 16
-GPT_MODELS = ['gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo', 'gpt-4o']
+GPT_MODELS = ['gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo', 'gpt-4o', 'gpt-4o-mini']
+DEFAULT_GPT_MODEL = GPT_MODELS[4]
 DALLE_MODELS = ['dall-e-2', 'dall-e-3']
 DEFAULT_HISTORY_TOKEN_LIMIT = 5000
 HISTORY_TOKEN_LIMIT = {
     'gpt-3.5-turbo': 12000,
     'gpt-4-turbo': 120000,
     'gpt-4o': 120000,
+    'gpt-4o-mini': 120000,
 }
-VISION_ENABLED = ['gpt-4-turbo', 'gpt-4o']
+VISION_ENABLED = ['gpt-4-turbo', 'gpt-4o', 'gpt-4o-mini']
