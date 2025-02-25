@@ -46,7 +46,9 @@ class TelegramUser:
         self.telegram._send_message(self.chatid, text)
 
     def send_reply(self, text):
-        self.send_message(text)
+        lines = text.splitlines()
+        for i in range(0, len(lines), 100):
+            self.send_message('\n'.join(lines[i:i+100]))
         if self.tts_all:
             self.telegram.whisper.create_tts(text, self.tts_model, self.tts_voice, lambda f: self.telegram._send_voice(self.chatid, f))
 
