@@ -26,7 +26,7 @@ def callback(cmd):
 class TelegramCommands(abc.ABC):
 
     def __init__(self):
-        self.chatgpt_manager = None
+        self.chat_manager = None
         self.user_manager = None
 
     @abc.abstractmethod
@@ -38,7 +38,7 @@ class TelegramCommands(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def _reply_photo(self, message, photo_url):
+    def _reply_photo(self, message, photo_bytes):
         ...
 
     @abc.abstractmethod

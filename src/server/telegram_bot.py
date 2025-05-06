@@ -5,18 +5,17 @@ import string
 
 import requests
 
-from server.openai.dalle import DallE
+from server.openai.images import AiImages
 from server.telegram.command_manager import telegram_commands, telegram_callbacks
-from server.telegram.commands.agent import TelegramCommandsAgent
-from server.telegram.commands.dalle import TelegramCommandsDalle
+from server.telegram.commands.images import TelegramCommandsImages
 from server.telegram.commands.general import TelegramCommandsGeneral
-from server.telegram.commands.gpt_settings import TelegramCommandsGptSettings
+from server.telegram.commands.settings import TelegramCommandsSettings
 from server.telegram.commands.threads import TelegramCommandsThreads
-from server.telegram.commands.whisper import TelegramCommandsWhisper
-from server.telegram.gpt_manager import ChatGPTManager
+from server.telegram.commands.audio import TelegramCommandsAudio
+from server.telegram.chat_manager import ChatManager
 from server.telegram.utils import UpdateDeduplicator, TelegramError
 from server.telegram.user import TelegramUserManager
-from server.openai.whisper import Whisper
+from server.openai.audio import AiAudio
 
 logger = logging.getLogger(__name__)
 
@@ -24,10 +23,9 @@ logger = logging.getLogger(__name__)
 class Telegram(
     TelegramCommandsGeneral,
     TelegramCommandsThreads,
-    TelegramCommandsGptSettings,
-    TelegramCommandsDalle,
-    TelegramCommandsWhisper,
-    TelegramCommandsAgent,
+    TelegramCommandsSettings,
+    TelegramCommandsImages,
+    TelegramCommandsAudio,
 ):
 
     def __init__(self, bot_token, webhook, allowed_users):
@@ -37,9 +35,9 @@ class Telegram(
         self.allowed_users = set(int(x) for x in allowed_users)
         self.secret_token = ''.join(random.choice(string.ascii_letters) for _ in range(32))
         self.deduplicator = UpdateDeduplicator()
-        self.chatgpt_manager = ChatGPTManager(self)
-        self.dalle = DallE()
-        self.whisper = Whisper()
+        self.chat_manager = ChatManager(self)
+        self.ai_images = AiImages()
+        self.ai_audio = AiAudio()
         self.user_manager = TelegramUserManager(self)
         self.assistant_name = 'TeleGPT'
 
@@ -55,7 +53,7 @@ class Telegram(
         self.assistant_name = user_info['first_name']
 
     def close(self):
-        self.chatgpt_manager.close()
+        self.chat_manager.close()
 
     def handle_update_safe(self, update, secret_token):
         try:
@@ -110,8 +108,8 @@ class Telegram(
         # TODO support parse_mode='MarkdownV2'
         return self._post('sendMessage', chat_id=chatid, text=message, **kwargs)
 
-    def _send_photo(self, chatid, photo_url, **kwargs):
-        return self._post('sendPhoto', chat_id=chatid, photo=photo_url, **kwargs)
+    def _send_photo(self, chatid, photo_bytes, **kwargs):
+        return self._post('sendPhoto', chat_id=chatid, files={'photo': photo_bytes}, **kwargs)
 
     def _send_voice(self, chatid, voice_file, **kwargs):
         logging.info('Sending voice file %s to chat %s', voice_file, chatid)
@@ -126,8 +124,8 @@ class Telegram(
             'inline_keyboard': buttons
         })
 
-    def _reply_photo(self, message, photo_url):
-        self._send_photo(message['chat']['id'], photo_url)
+    def _reply_photo(self, message, photo_bytes):
+        self._send_photo(message['chat']['id'], photo_bytes)
 
     def _reply_voice(self, message, voice_file):
         self._send_voice(message['chat']['id'], voice_file)
@@ -156,17 +154,17 @@ class Telegram(
 
     def _handle_normal_message(self, message):
         self._chat_action(message, 'typing')
-        self.chatgpt_manager.get_chatgpt_for_message(message).submit_text_message(message['text'])
+        self.chat_manager.get_chat_for_message(message).submit_text_message(message['text'])
 
     def _handle_audio_file(self, message, file_id):
         audio_url = self._get_file_url(file_id)
-        transcript = self.whisper.transcribe_url(audio_url)
+        transcript = self.ai_audio.transcribe_url(audio_url)
         if not transcript:
             self._reply(message, 'Sorry, I did not understand this.')
             return
         self._reply(message, f'*Transcript*\n\n{transcript}')
         self._chat_action(message, 'typing')
-        self.chatgpt_manager.get_chatgpt_for_message(message).submit_text_message(transcript)
+        self.chat_manager.get_chat_for_message(message).submit_text_message(transcript)
 
     def _handle_text_message(self, message):
         logger.info('Handle text message')
@@ -208,13 +206,16 @@ class Telegram(
             if size >= 512 and size < min_size_over_512:
                 min_size_over_512 = size
                 min_photo_over_512 = photo
-        target_detail = self.chatgpt_manager.get_chatgpt_for_message(message).get_current_vision_detail()
+        target_detail = self.chat_manager.get_chat_for_message(message).get_current_vision_detail()
         if target_detail == 'low' and min_photo_over_512 is not None:
             photo = min_photo_over_512
         else:
             photo = max_photo
         photo_url = self._get_file_url(photo['file_id'])
-        self.chatgpt_manager.get_chatgpt_for_message(message).submit_image_message(photo_url, message.get('caption'))
+        chat = self.chat_manager.get_chat_for_message(message)
+        chat.submit_image_message(photo_url)
+        if message.get('caption'):
+            chat.submit_text_message(message.get('caption'))
 
     def _handle_audio_message(self, message):
         logger.info('Handle audio message')

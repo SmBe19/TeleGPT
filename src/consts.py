@@ -1,23 +1,64 @@
 SOCKET_NAME = 'telegpt.sock'
 MAX_WORKER_IDLE_SECONDS = 60 * 60
 DATA_DIR = 'chats'
+BASE64_PREFIX = 'data:image/png;base64, '
 
-SYSTEM_MESSAGES = {
-    'default': 'You are {assistant_name}, a friendly personal assistant. Answer concisely.',
-    'drunk': 'You are {assistant_name}. I want you to act as a drunk person. You will only answer like a very drunk person texting and nothing else. Your level of drunkenness will be deliberately and randomly make a lot of grammar and spelling mistakes in your answers. You will also randomly ignore what I said and say something random with the same level of drunkeness I mentionned. Do not write explanations on replies. Never break character.',
-    'adventure': 'I want you to act as a text based adventure game. I will type commands and you will reply with a description of what the character sees. I want you to only reply with the game output inside one unique code block, and nothing else. do not write explanations. do not type commands unless I instruct you to do so. when i need to tell you something in english, i will do so by putting text inside curly brackets {{like this}}.',
+FEAT_VISION = 'vision'
+FEAT_AUDIO = 'audio'
+FEAT_SPEECH = 'speech'
+FEAT_SPEECH_INSTRUCTIONS = 'speech_instructions'
+FEAT_RESPONSE_FORMAT = 'response_format'
+IMAGE_SIZES = 'sizes'
+IMAGE_QUALITY = 'quality'
+IMAGE_STYLE = 'style'
+IMAGE_BACKGROUND = 'background'
+SPEECH_VOICES = 'voices'
+
+SYSTEM_MESSAGE = 'You are {assistant_name}, a friendly personal assistant. Answer concisely.'
+CHAT_MODELS = {
+    'gpt-3.5-turbo': {},
+    'gpt-4': {},
+    'gpt-4-turbo': { FEAT_VISION: True },
+    'gpt-4o': { FEAT_VISION: True },
+    'gpt-4o-mini': { FEAT_VISION: True },
+    'gpt-4o-audio-preview': { FEAT_AUDIO: True, FEAT_SPEECH: True },
+    'gpt-4o-mini-audio-preview': { FEAT_AUDIO: True, FEAT_SPEECH: True },
+    'gpt-4.1': { FEAT_VISION: True },
+    'o3': { FEAT_VISION: True },
+    'o4-mini': { FEAT_VISION: True },
 }
-MESSAGES_UNTIL_AUTONAME = 4
-MIN_HISTORY_CONTEXT = 2
-TARGET_HISTORY_CONTEXT = 16
-GPT_MODELS = ['gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo', 'gpt-4o', 'gpt-4o-mini']
-DEFAULT_GPT_MODEL = GPT_MODELS[4]
-DALLE_MODELS = ['dall-e-2', 'dall-e-3']
-DEFAULT_HISTORY_TOKEN_LIMIT = 5000
-HISTORY_TOKEN_LIMIT = {
-    'gpt-3.5-turbo': 12000,
-    'gpt-4-turbo': 120000,
-    'gpt-4o': 120000,
-    'gpt-4o-mini': 120000,
+TRANSCRIBE_MODELS = {
+    'whisper-1': {},
+    'gpt-4o-transcribe': {},
+    'gpt-4o-mini-transcribe': {},
 }
-VISION_ENABLED = ['gpt-4-turbo', 'gpt-4o', 'gpt-4o-mini']
+SPEECH_MODELS = {
+    'tts-1': {
+        SPEECH_VOICES: ['echo', 'alloy', 'ash', 'ballad', 'coral', 'fable', 'onyx', 'nova', 'sage', 'shimmer', 'verse'],
+    },
+    'gpt-4o-mini-tts': {
+        FEAT_SPEECH_INSTRUCTIONS: True,
+        SPEECH_VOICES: ['echo', 'alloy', 'ash', 'ballad', 'coral', 'fable', 'onyx', 'nova', 'sage', 'shimmer', 'verse'],
+    },
+}
+IMAGE_MODELS = {
+    'dall-e-2': {
+        IMAGE_SIZES: ['256x256', '512x512', '1024x1024'],
+        FEAT_RESPONSE_FORMAT: True,
+    },
+    'dall-e-3': {
+        IMAGE_SIZES: ['1024x1024', '1024x1792', '1792x1024'],
+        IMAGE_QUALITY: ['standard', 'hd'],
+        IMAGE_STYLE: ['natural', 'vivid'],
+        FEAT_RESPONSE_FORMAT: True,
+    },
+    'gpt-image-1': {
+        IMAGE_SIZES: ['1024x1024', '1024x1536', '1536x1024'],
+        IMAGE_QUALITY: ['low', 'medium', 'high'],
+        IMAGE_BACKGROUND: ['auto', 'transparent', 'opaque']
+    },
+}
+DEFAULT_CHAT_MODEL = 'gpt-4o-mini'
+DEFAULT_TRANSCRIBE_MODEL = 'whisper-1'
+DEFAULT_SPEECH_MODEL = 'tts-1'
+DEFAULT_IMAGE_MODEL = 'gpt-image-1'
