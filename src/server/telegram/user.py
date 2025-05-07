@@ -40,6 +40,7 @@ class TelegramUser:
         self.speech_voice = { model: SPEECH_MODELS[model][SPEECH_VOICES][0] for model in SPEECH_MODELS }
         self.transcribe_model = DEFAULT_TRANSCRIBE_MODEL
         self.speech_all = False
+        self.transcribe_all = False
         self.open_command = None
 
     def send_message(self, text):

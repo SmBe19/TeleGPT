@@ -1,6 +1,7 @@
+import base64
 import json
 
-from consts import SPEECH_MODELS, SPEECH_VOICES, FEAT_SPEECH_INSTRUCTIONS
+from consts import SPEECH_MODELS, TRANSCRIBE_MODELS, SPEECH_VOICES, FEAT_SPEECH_INSTRUCTIONS
 from server.telegram.command_manager import command, TelegramCommands, callback
 
 
@@ -19,9 +20,7 @@ class TelegramCommandsAudio(TelegramCommands):
                 user.open_command = self.tts
         else:
             with self.user_manager.get_user_for_message(message) as user:
-                tts_model = user.tts_model
-                tts_voice = user.tts_voice
-            self.ai_audio.create_tts(prompt, tts_model, tts_voice, lambda f: self._reply_voice(message, f))
+                self.ai_audio.create_tts(prompt, user, lambda f: self._reply_voice(message, f))
 
     @command('Change instructions for tts', 51)
     def ttsinstructions(self, message):
@@ -96,3 +95,45 @@ class TelegramCommandsAudio(TelegramCommands):
         else:
             self._reply(message, 'Changed setting. Will not send tts for all assistant replies.')
 
+    @command('Transcribe the last audio input', 60)
+    def stt(self, message):
+        audio_messages = self.chat_manager.get_chat_for_message(message).get_audio_messages()
+        if not audio_messages:
+            self._reply(message, 'Sorry, there is nothing to transcribe.')
+            return
+        for message_part in audio_messages[-1]['content']:
+            if message_part.get('type') == 'input_audio':
+                audio_bytes = base64.b64decode(message_part['input_audio']['data'])
+                self._transcribe_and_submit(message, audio_bytes)
+                return
+
+    @command('Select the stt model to use', 61)
+    def sttmodel(self, message):
+        with self.user_manager.get_user_for_message(message) as user:
+            transcribe_model = user.transcribe_model
+        reply = f'Choose stt model (currently {transcribe_model})'
+        buttons = [[{
+            'text': model,
+            'callback_data': json.dumps({
+                'cmd': 'sttmodel',
+                'new_model': model
+            }),
+        }] for model in TRANSCRIBE_MODELS]
+        self._reply_keyboard(message, reply, self._with_cancel_button(buttons))
+
+    @callback('sttmodel')
+    def sttmodel_callback(self, message, data):
+        new_model = data['new_model']
+        with self.user_manager.get_user_for_message(message) as user:
+            user.transcribe_model = new_model
+        self._reply(message, f'Changed stt model to {new_model}.')
+
+    @command('Switch transcribing for all audio inputs', 62)
+    def sttall(self, message):
+        with self.user_manager.get_user_for_message(message) as user:
+            user.transcribe_all = not user.transcribe_all
+            new_transcribe_all = user.transcribe_all
+        if new_transcribe_all:
+            self._reply(message, 'Changed setting. Will transcribe all audio inputs.')
+        else:
+            self._reply(message, 'Changed setting. Will not transcribe all audio inputs.')

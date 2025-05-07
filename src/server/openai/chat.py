@@ -1,3 +1,4 @@
+import base64
 import json
 import logging
 import os
@@ -7,7 +8,8 @@ from queue import Queue, Empty
 
 from openai import OpenAI
 
-from consts import MAX_WORKER_IDLE_SECONDS, DATA_DIR, SYSTEM_MESSAGE, CHAT_MODELS, DEFAULT_CHAT_MODEL, FEAT_VISION
+from consts import MAX_WORKER_IDLE_SECONDS, DATA_DIR, SYSTEM_MESSAGE, CHAT_MODELS, DEFAULT_CHAT_MODEL, FEAT_VISION, FEAT_AUDIO
+from server.openai.utils import message_is_audio, message_is_image
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +51,7 @@ class AiChat:
         def _process_text_message():
             logger.info('Send new message to model.')
             self.current_thread['messages'].append({'role': 'user', 'content': text})
-            messages = self._get_current_messages()
+            messages = self.get_supported_messages()
             response = self.openai.chat.completions.create(
                 model=self.get_current_model(),
                 messages=messages,
@@ -65,13 +67,17 @@ class AiChat:
 
     def submit_image_message(self, image_url):
         def _process_image():
-            if not CHAT_MODELS[self.get_current_model()].get(FEAT_VISION, False):
-                self.user.send_reply('Sorry, this model does not support vision.')
-                return
             logger.info('Add new image message to thread.')
             message = [{'type': 'image_url', 'image_url': {'url': image_url, 'detail': self.get_current_vision_detail()}}]
             self.current_thread['messages'].append({'role': 'user', 'content': message})
         self.queue.put(lambda: _process_image())
+    
+    def submit_audio_message(self, audio_bytes):
+        def _process_audio():
+            logger.info('Add new audio message to thread.')
+            message = [{'type': 'input_audio', 'input_audio': {'data': base64.b64encode(audio_bytes).decode(), 'format': 'mp3'}}]
+            self.current_thread['messages'].append({'role': 'user', 'content': message})
+        self.queue.put(lambda: _process_audio())
 
     def get_thread_names(self):
         return {thread_id: value['name'] for thread_id, value in
@@ -155,6 +161,27 @@ class AiChat:
     def get_current_thread_id(self):
         return self.data['current_thread_id']
 
+    def get_all_messages(self, init_message=None):
+        messages = [{
+            'role': 'system',
+            'content': init_message or self.current_thread['init_message']
+        }]
+        messages.extend(self.current_thread['messages'])
+        return messages
+    
+    def get_supported_messages(self, init_message=None):
+        vision = CHAT_MODELS[self.get_current_model()].get(FEAT_VISION, False)
+        audio = CHAT_MODELS[self.get_current_model()].get(FEAT_AUDIO, False)
+        def _message_supported(message):
+            return (vision or not message_is_image(message)) and (audio or not message_is_audio(message))
+        return list(filter(_message_supported, self.get_all_messages(init_message)))
+    
+    def get_image_messages(self):
+        return list(filter(message_is_image, self.get_all_messages()))
+    
+    def get_audio_messages(self):
+        return list(filter(message_is_audio, self.get_all_messages()))
+
     def _load_current_thread(self):
         thread_data_path = self._thread_data_path(self.get_current_thread_id())
         if os.path.exists(thread_data_path):
@@ -193,14 +220,6 @@ class AiChat:
         root_data_path = os.path.join(DATA_DIR, f'{self.user.chatid}.json')
         with open(root_data_path, 'w') as f:
             json.dump(self.data, f)
-
-    def _get_current_messages(self, init_message=None):
-        messages = [{
-            'role': 'system',
-            'content': init_message or self.current_thread['init_message']
-        }]
-        messages.extend(self.current_thread['messages'])
-        return messages
 
     def _new_thread(self, silent=False):
         thread_id = str(self.data['next_thread_id'])

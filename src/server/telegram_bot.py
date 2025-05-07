@@ -158,13 +158,23 @@ class Telegram(
 
     def _handle_audio_file(self, message, file_id):
         audio_url = self._get_file_url(file_id)
-        transcript = self.ai_audio.transcribe_url(audio_url)
+        audio_bytes = self.ai_audio.get_audio_bytes(audio_url)
+        self.chat_manager.get_chat_for_message(message).submit_audio_message(audio_bytes)
+        with self.user_manager.get_user_for_message(message) as user:
+            transcribe = user.transcribe_all
+        if transcribe:
+            self._transcribe_and_submit(message, audio_bytes)
+    
+    def _transcribe_and_submit(self, message, audio_bytes):
+        with self.user_manager.get_user_for_message(message) as user:
+            transcript = self.ai_audio.transcribe(audio_bytes, user)
         if not transcript:
             self._reply(message, 'Sorry, I did not understand this.')
             return
         self._reply(message, f'*Transcript*\n\n{transcript}')
         self._chat_action(message, 'typing')
         self.chat_manager.get_chat_for_message(message).submit_text_message(transcript)
+
 
     def _handle_text_message(self, message):
         logger.info('Handle text message')

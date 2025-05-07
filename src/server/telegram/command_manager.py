@@ -49,6 +49,10 @@ class TelegramCommands(abc.ABC):
     def _chat_action(self, message, action):
         ...
 
+    @abc.abstractmethod
+    def _transcribe_and_submit(self, message, audio_bytes):
+        ...
+
     def _get_command_argument(self, message, command_name):
         text = message['text']
         for entity in message.get('entities', []):

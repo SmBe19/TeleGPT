@@ -1,7 +1,7 @@
 import base64
 import json
 
-from consts import IMAGE_MODELS, IMAGE_SIZES, IMAGE_QUALITY, IMAGE_STYLE, IMAGE_BACKGROUND, BASE64_PREFIX
+from consts import IMAGE_MODELS, IMAGE_SIZES, IMAGE_QUALITY, IMAGE_STYLE, IMAGE_BACKGROUND, BASE64_PREFIX, FEAT_EDITS
 from server.telegram.command_manager import command, TelegramCommands, callback
 
 
@@ -28,7 +28,10 @@ class TelegramCommandsImages(TelegramCommands):
 
     @command('Generate an image edit', 41)
     def imgedit(self, message):
-        # TODO check the model supports edits
+        with self.user_manager.get_user_for_message(message) as user:
+            if not IMAGE_MODELS[user.image_model].get(FEAT_EDITS, False):
+                self.user.send_reply('Sorry, this model does not support edits.')
+                return
         prompt = self._get_command_argument(message, '/imgedit')
         if not prompt:
             self._reply(message, 'Please enter the image generation prompt. Optionally, start with an integer to indicate how many of the last images should be included (default 1).')
@@ -40,13 +43,11 @@ class TelegramCommandsImages(TelegramCommands):
             if parts[0].isdigit() and len(parts) > 1:
                 imgcount = int(parts[0])
                 prompt = parts[1]
-            # TODO we shouldn't access a private method
             image_urls = []
-            for cur_message in reversed(self.chat_manager.get_chat_for_message(message)._get_current_messages()):
-                if isinstance(cur_message['content'], list):
-                    for message_part in cur_message['content']:
-                        if message_part.get('type') == 'image_url':
-                            image_urls.append(message_part['image_url']['url'])
+            for cur_message in reversed(self.chat_manager.get_chat_for_message(message).get_image_messages()):
+                for message_part in cur_message['content']:
+                    if message_part.get('type') == 'image_url':
+                        image_urls.append(message_part['image_url']['url'])
             image_urls = list(reversed(image_urls[:imgcount]))
             with self.user_manager.get_user_for_message(message) as user:
                 self._chat_action(message, 'upload_photo')

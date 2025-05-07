@@ -1,4 +1,5 @@
 import logging
+import io
 import os
 import tempfile
 
@@ -13,8 +14,8 @@ class AiAudio:
 
     def __init__(self):
         self.openai = OpenAI(api_key=os.environ['OPENAI_API_KEY'])
-
-    def transcribe_url(self, url, user):
+    
+    def get_audio_bytes(self, url):
         with tempfile.TemporaryDirectory() as tempdir:
             response = requests.get(url)
             if not response.ok:
@@ -25,13 +26,18 @@ class AiAudio:
                 f.write(response.content)
             destination_file = os.path.join(tempdir, 'voice.mp3')
             pydub.AudioSegment.from_file(original_file).export(destination_file, format='mp3')
-            logger.info('Start transcribing')
             with open(destination_file, 'rb') as f:
-                transcript = self.openai.audio.transcriptions.create(file=f, model=user.transcribe_model)
-            logger.info('Finished transcribing')
-            return transcript.text
+                return f.read()
 
-    def create_tts(self, message, user, callback):
+    def transcribe(self, audio_bytes, user):
+        audio_file = io.BytesIO(audio_bytes)
+        audio_file.name = 'voice.mp3'
+        logger.info('Start transcribing')
+        transcript = self.openai.audio.transcriptions.create(file=audio_file, model=user.transcribe_model)
+        logger.info('Finished transcribing')
+        return transcript.text
+
+    def create_speech(self, message, user, callback):
         with tempfile.TemporaryDirectory() as tempdir:
             kwargs = {}
             if user.speech_instructions.get(user.speech_model):

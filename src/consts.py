@@ -7,7 +7,9 @@ FEAT_VISION = 'vision'
 FEAT_AUDIO = 'audio'
 FEAT_SPEECH = 'speech'
 FEAT_SPEECH_INSTRUCTIONS = 'speech_instructions'
+FEAT_EDITS = 'edits'
 FEAT_RESPONSE_FORMAT = 'response_format'
+FEAT_MODERATION = 'moderation'
 IMAGE_SIZES = 'sizes'
 IMAGE_QUALITY = 'quality'
 IMAGE_STYLE = 'style'
@@ -45,6 +47,7 @@ IMAGE_MODELS = {
     'dall-e-2': {
         IMAGE_SIZES: ['256x256', '512x512', '1024x1024'],
         FEAT_RESPONSE_FORMAT: True,
+        FEAT_EDITS: True,
     },
     'dall-e-3': {
         IMAGE_SIZES: ['1024x1024', '1024x1792', '1792x1024'],
@@ -55,7 +58,9 @@ IMAGE_MODELS = {
     'gpt-image-1': {
         IMAGE_SIZES: ['1024x1024', '1024x1536', '1536x1024'],
         IMAGE_QUALITY: ['low', 'medium', 'high'],
-        IMAGE_BACKGROUND: ['auto', 'transparent', 'opaque']
+        IMAGE_BACKGROUND: ['auto', 'transparent', 'opaque'],
+        FEAT_EDITS: True,
+        FEAT_MODERATION: True,
     },
 }
 DEFAULT_CHAT_MODEL = 'gpt-4o-mini'

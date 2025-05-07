@@ -6,7 +6,7 @@ import requests
 
 from openai import OpenAI
 
-from consts import IMAGE_MODELS, FEAT_RESPONSE_FORMAT, BASE64_PREFIX
+from consts import IMAGE_MODELS, FEAT_RESPONSE_FORMAT, FEAT_MODERATION, BASE64_PREFIX
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +19,8 @@ class AiImages:
     def generate_image(self, prompt, user):
         logger.info('Generate image of size %s with model %s', user.image_size[user.image_model], user.image_model)
         kwargs = self._get_common_args(user)
+        if IMAGE_MODELS[user.image_model].get(FEAT_MODERATION, False):
+            kwargs['moderation'] = 'low'
         response = self.openai.images.generate(prompt=prompt, **kwargs)
         logger.info('Finished generating image')
         return base64.b64decode(response.data[0].b64_json)
