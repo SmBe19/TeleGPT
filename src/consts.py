@@ -15,19 +15,22 @@ IMAGE_QUALITY = 'quality'
 IMAGE_STYLE = 'style'
 IMAGE_BACKGROUND = 'background'
 SPEECH_VOICES = 'voices'
+REASONING_EFFORTS = 'reasoning_efforts'
 
 SYSTEM_MESSAGE = 'You are {assistant_name}, a friendly personal assistant. Answer concisely.'
 CHAT_MODELS = {
-    'gpt-3.5-turbo': {},
-    'gpt-4': {},
-    'gpt-4-turbo': { FEAT_VISION: True },
     'gpt-4o': { FEAT_VISION: True },
     'gpt-4o-mini': { FEAT_VISION: True },
     'gpt-4o-audio-preview': { FEAT_AUDIO: True, FEAT_SPEECH: True },
     'gpt-4o-mini-audio-preview': { FEAT_AUDIO: True, FEAT_SPEECH: True },
     'gpt-4.1': { FEAT_VISION: True },
-    'o3': { FEAT_VISION: True },
-    'o4-mini': { FEAT_VISION: True },
+    'gpt-4.1-mini': { FEAT_VISION: True },
+    'gpt-4.1-nano': { FEAT_VISION: True },
+    'o3': { FEAT_VISION: True, REASONING_EFFORTS: ['low', 'medium', 'high'] },
+    'o4-mini': { FEAT_VISION: True, REASONING_EFFORTS: ['low', 'medium', 'high'] },
+    'gpt-5': { FEAT_VISION: True, REASONING_EFFORTS: ['minimal', 'low', 'medium', 'high'] },
+    'gpt-5-mini': { FEAT_VISION: True,REASONING_EFFORTS: ['minimal', 'low', 'medium', 'high'] },
+    'gpt-5-nano': { FEAT_VISION: True, REASONING_EFFORTS: ['minimal', 'low', 'medium', 'high'] },
 }
 TRANSCRIBE_MODELS = {
     'whisper-1': {},
@@ -63,7 +66,9 @@ IMAGE_MODELS = {
         FEAT_MODERATION: True,
     },
 }
-DEFAULT_CHAT_MODEL = 'gpt-4o-mini'
+DEFAULT_CHAT_MODEL = 'gpt-5-mini'
+DEFAULT_REASONING_EFFORT = 'minimal'
+DEFAULT_VISION_DETAIL = 'low'
 DEFAULT_TRANSCRIBE_MODEL = 'whisper-1'
 DEFAULT_SPEECH_MODEL = 'tts-1'
 DEFAULT_IMAGE_MODEL = 'gpt-image-1'

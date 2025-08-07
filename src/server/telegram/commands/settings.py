@@ -1,6 +1,6 @@
 import json
 
-from consts import CHAT_MODELS
+from consts import CHAT_MODELS, REASONING_EFFORTS
 from server.telegram.command_manager import command, TelegramCommands, callback
 
 
@@ -37,6 +37,30 @@ class TelegramCommandsSettings(TelegramCommands):
     def model_callback(self, message, data):
         new_model = data['new_model']
         self.chat_manager.get_chat_for_message(message).set_model(new_model)
+
+    @command('Select the reasoning effort', 22)
+    def reasoning_effort(self, message):
+        chat = self.chat_manager.get_chat_for_message(message)
+        current_model = chat.get_current_model()
+        if REASONING_EFFORTS not in CHAT_MODELS[current_model]:
+            self._reply(message, 'The current model does not support reasoning effort selection')
+            return
+        current_reasoning_effort = chat.get_current_reasoning_effort()
+        reply = f'Choose the new reasoning effort (currently {current_reasoning_effort})'
+        buttons = [[{
+            'text': effort,
+            'callback_data': json.dumps({
+                'cmd': 'reasoning_effort',
+                'new_reasoning_effort': effort
+            }),
+        } for effort in CHAT_MODELS[current_model][REASONING_EFFORTS]]]
+        self._reply_keyboard(message, reply, self._with_cancel_button(buttons))
+
+    @callback('reasoning_effort')
+    def reasoning_effort_callback(self, message, data):
+        new_reasoning_effort = data['new_reasoning_effort']
+        self.chat_manager.get_chat_for_message(message).set_reasoning_effort(new_reasoning_effort)
+        self._reply(message, f'Changed reasoning effort to {new_reasoning_effort}.')
 
     @command('Select the vision detail to use', 80)
     def visiondetail(self, message):

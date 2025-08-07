@@ -8,7 +8,7 @@ from queue import Queue, Empty
 
 from openai import OpenAI
 
-from consts import MAX_WORKER_IDLE_SECONDS, DATA_DIR, SYSTEM_MESSAGE, CHAT_MODELS, DEFAULT_CHAT_MODEL, FEAT_VISION, FEAT_AUDIO
+from consts import DEFAULT_REASONING_EFFORT, DEFAULT_VISION_DETAIL, MAX_WORKER_IDLE_SECONDS, DATA_DIR, REASONING_EFFORTS, SYSTEM_MESSAGE, CHAT_MODELS, DEFAULT_CHAT_MODEL, FEAT_VISION, FEAT_AUDIO
 from server.openai.utils import message_is_audio, message_is_image
 
 logger = logging.getLogger(__name__)
@@ -52,9 +52,14 @@ class AiChat:
             logger.info('Send new message to model.')
             self.current_thread['messages'].append({'role': 'user', 'content': text})
             messages = self.get_supported_messages()
+            reasoning_effort = self.get_current_reasoning_effort()
+            kwargs = {}
+            if reasoning_effort:
+                kwargs['reasoning_effort'] = reasoning_effort
             response = self.openai.chat.completions.create(
                 model=self.get_current_model(),
                 messages=messages,
+                **kwargs,
             )
             logger.info('Got response from model.')
             logger.debug('Usage for model: %s tokens by chat %s', response.usage.total_tokens, self.user.chatid)
@@ -140,8 +145,19 @@ class AiChat:
     def set_model(self, model):
         def _set_model():
             self.current_thread['model'] = model
+            old_reasoning_effort = self.get_current_reasoning_effort()
+            new_reasoning_effort = CHAT_MODELS[model].get(REASONING_EFFORTS, [''])[0]
+            self.current_thread['reasoning_effort'] = new_reasoning_effort
             self.user.send_message(f'Changed model to {model}.')
+            if old_reasoning_effort != new_reasoning_effort and new_reasoning_effort:
+                self.user.send_message(f'Changed reasoning effort to {new_reasoning_effort}.')
         self.queue.put(lambda: _set_model())
+
+    def set_reasoning_effort(self, effort):
+        def _set_reasoning_effort():
+            self.current_thread['reasoning_effort'] = effort
+            self.user.send_message(f'Changed reasoning effort to {effort}.')
+        self.queue.put(lambda: _set_reasoning_effort())
 
     def set_vision_detail(self, detail):
         def _set_vision_detail():
@@ -154,6 +170,9 @@ class AiChat:
 
     def get_current_model(self):
         return self.current_thread['model']
+    
+    def get_current_reasoning_effort(self):
+        return self.current_thread['reasoning_effort']
 
     def get_current_vision_detail(self):
         return self.current_thread['vision_detail']
@@ -231,7 +250,8 @@ class AiChat:
         self.data['current_thread_id'] = thread_id
         self.current_thread = {
             'model': DEFAULT_CHAT_MODEL,
-            'vision_detail': 'low',
+            'reasoning_effort': DEFAULT_REASONING_EFFORT,
+            'vision_detail': DEFAULT_VISION_DETAIL,
             'total_tokens': 0,
             'init_message': SYSTEM_MESSAGE.format(assistant_name=self.user.telegram.assistant_name),
             'messages': [],
