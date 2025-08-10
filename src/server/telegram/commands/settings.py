@@ -60,7 +60,6 @@ class TelegramCommandsSettings(TelegramCommands):
     def reasoning_effort_callback(self, message, data):
         new_reasoning_effort = data['new_reasoning_effort']
         self.chat_manager.get_chat_for_message(message).set_reasoning_effort(new_reasoning_effort)
-        self._reply(message, f'Changed reasoning effort to {new_reasoning_effort}.')
 
     @command('Select the vision detail to use', 80)
     def visiondetail(self, message):
