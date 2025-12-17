@@ -1,5 +1,5 @@
 # TeleGPT
-TeleGPT is an intelligent Telegram bot that uses OpenAI's GPT-3.5 language model to provide natural language-based interactions.
+TeleGPT is an intelligent Telegram bot that uses OpenAI's language models to provide natural language-based interactions.
 
 # Running
 Install the python requirements (`requirements.txt`). Copy `secrets.template.env` to `secrets.env` and fill out the values. Set the `ALLOWED_USERS` value to a comma separated list of telegram account ids which should be allowed. An easy way to get this is to start the bot without any ids and trying to talk with the bot, it will print the required user id to the logs.

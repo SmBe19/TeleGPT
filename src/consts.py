@@ -31,6 +31,8 @@ CHAT_MODELS = {
     'gpt-5': { FEAT_VISION: True, REASONING_EFFORTS: ['minimal', 'low', 'medium', 'high'] },
     'gpt-5-mini': { FEAT_VISION: True,REASONING_EFFORTS: ['minimal', 'low', 'medium', 'high'] },
     'gpt-5-nano': { FEAT_VISION: True, REASONING_EFFORTS: ['minimal', 'low', 'medium', 'high'] },
+    'gpt-5.1': { FEAT_VISION: True, REASONING_EFFORTS: ['minimal', 'low', 'medium', 'high'] },
+    'gpt-5.2': { FEAT_VISION: True, REASONING_EFFORTS: ['minimal', 'low', 'medium', 'high'] },
 }
 TRANSCRIBE_MODELS = {
     'whisper-1': {},
@@ -65,10 +67,17 @@ IMAGE_MODELS = {
         FEAT_EDITS: True,
         FEAT_MODERATION: True,
     },
+    'gpt-image-1.5': {
+        IMAGE_SIZES: ['1024x1024', '1024x1536', '1536x1024'],
+        IMAGE_QUALITY: ['low', 'medium', 'high'],
+        IMAGE_BACKGROUND: ['auto', 'transparent', 'opaque'],
+        FEAT_EDITS: True,
+        FEAT_MODERATION: True,
+    },
 }
 DEFAULT_CHAT_MODEL = 'gpt-5-mini'
 DEFAULT_REASONING_EFFORT = 'minimal'
 DEFAULT_VISION_DETAIL = 'low'
 DEFAULT_TRANSCRIBE_MODEL = 'whisper-1'
 DEFAULT_SPEECH_MODEL = 'tts-1'
-DEFAULT_IMAGE_MODEL = 'gpt-image-1'
+DEFAULT_IMAGE_MODEL = 'gpt-image-1.5'
