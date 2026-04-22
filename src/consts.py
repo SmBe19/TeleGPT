@@ -67,7 +67,21 @@ IMAGE_MODELS = {
         FEAT_EDITS: True,
         FEAT_MODERATION: True,
     },
+    'gpt-image-1-mini': {
+        IMAGE_SIZES: ['1024x1024', '1024x1536', '1536x1024'],
+        IMAGE_QUALITY: ['low', 'medium', 'high'],
+        IMAGE_BACKGROUND: ['auto', 'transparent', 'opaque'],
+        FEAT_EDITS: True,
+        FEAT_MODERATION: True,
+    },
     'gpt-image-1.5': {
+        IMAGE_SIZES: ['1024x1024', '1024x1536', '1536x1024'],
+        IMAGE_QUALITY: ['low', 'medium', 'high'],
+        IMAGE_BACKGROUND: ['auto', 'transparent', 'opaque'],
+        FEAT_EDITS: True,
+        FEAT_MODERATION: True,
+    },
+    'gpt-image-2': {
         IMAGE_SIZES: ['1024x1024', '1024x1536', '1536x1024'],
         IMAGE_QUALITY: ['low', 'medium', 'high'],
         IMAGE_BACKGROUND: ['auto', 'transparent', 'opaque'],
@@ -80,4 +94,4 @@ DEFAULT_REASONING_EFFORT = 'minimal'
 DEFAULT_VISION_DETAIL = 'low'
 DEFAULT_TRANSCRIBE_MODEL = 'whisper-1'
 DEFAULT_SPEECH_MODEL = 'tts-1'
-DEFAULT_IMAGE_MODEL = 'gpt-image-1.5'
+DEFAULT_IMAGE_MODEL = 'gpt-image-1-mini'
