@@ -1,6 +1,6 @@
 import base64
 
-from consts import BASE64_PREFIX, HIDDEN_IMAGE_SETTINGS, OPENAI_IMAGE_SETTINGS, OPENAI_PREFIX
+from consts import HIDDEN_IMAGE_SETTINGS, OPENAI_IMAGE_SETTINGS, OPENAI_PREFIX
 from server.telegram.command_manager import CAT_IMAGES, command, callback
 from server.telegram.commands.utils import TelegramCommandsUtils
 

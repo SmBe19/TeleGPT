@@ -8,7 +8,7 @@ import threading
 import time
 from queue import Queue, Empty
 
-from consts import DEFAULT_THREAD_SETTINGS, MAX_WORKER_IDLE_SECONDS, DATA_DIR, SYSTEM_MESSAGE
+from consts import BASE64_JPEG_PREFIX, BASE64_PNG_PREFIX, DEFAULT_THREAD_SETTINGS, MAX_WORKER_IDLE_SECONDS, DATA_DIR, SYSTEM_MESSAGE
 from server.aiapi.openrouter import OpenRouter
 from server.aiapi.utils import message_is_audio, message_is_image
 
@@ -83,11 +83,23 @@ class AiChat:
             if response_message.get('images'):
                 logger.info('Response contains image(s).')
                 for image in response_message['images']:
-                    image_bytes = requests.get(image['url']).content
-                    self.user.send_photo(image_bytes)
+                    if image['type'] == 'image_url':
+                        image_url = image['image_url']['url']
+                        image_bytes = None
+                        for prefix in [BASE64_PNG_PREFIX, BASE64_JPEG_PREFIX]:
+                            if image_url.startswith(prefix):
+                                image_bytes = base64.b64decode(image_url[len(prefix):])
+                                break
+                        if not image_bytes:
+                            image_bytes = requests.get(image_url).content
+                        self.user.send_photo(image_bytes)
+                    else:
+                        logger.warning('Unknown image type in response: %s', image['type'])
+                        self.user.send_reply('Unknown image type in response: ' + image['type'])
             self.current_thread['messages'].append(response_message)
             self._save_current_thread()
-            self.user.send_reply(response_text)
+            if response_text:
+                self.user.send_reply(response_text)
         self.queue.put(lambda: _process_text_message())
 
     def submit_image_message(self, image_url):
@@ -327,5 +339,5 @@ class AiChat:
                 item()
             except Exception as e:
                 logger.error('Model failed', exc_info=e)
-                self.user.send_message('Sorry, I crashed. ' + str(e))
+                self.user.send_message('Sorry, I crashed. ' + str(e)[:1024])
             self.queue.task_done()

@@ -6,7 +6,7 @@ import requests
 
 from openai import OpenAI
 
-from consts import DEFAULT_OPENAI_IMAGE_SETTINGS, BASE64_PREFIX, OPENAI_IMAGE_SETTINGS, OPENAI_PREFIX, OPENAI_SETTING_PREFIX
+from consts import BASE64_JPEG_PREFIX, DEFAULT_OPENAI_IMAGE_SETTINGS, BASE64_PNG_PREFIX, OPENAI_IMAGE_SETTINGS, OPENAI_PREFIX, OPENAI_SETTING_PREFIX
 from server.aiapi.openrouter import OpenRouter
 
 logger = logging.getLogger(__name__)
@@ -47,14 +47,18 @@ class AiImages:
     def _prepare_images(self, image_urls):
         result = []
         for image in image_urls:
-            if image.startswith(BASE64_PREFIX):
-                result.append(io.BytesIO(base64.b64decode(image[len(BASE64_PREFIX):])))
-            else:
+            found_bytes = None
+            for prefix in [BASE64_PNG_PREFIX, BASE64_JPEG_PREFIX]:
+                if image.startswith(prefix):
+                    found_bytes = base64.b64decode(image[len(prefix):].strip())
+                    break
+            if not found_bytes:
                 response = requests.get(image)
                 if not response.ok:
                     logger.warning('Failed to download image file')
                     continue
-                result.append(io.BytesIO(response.content))
+                found_bytes = response.content
+            result.append(io.BytesIO(found_bytes))
         for image in result:
             image.name = 'image.png'
         return result

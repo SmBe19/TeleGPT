@@ -31,7 +31,6 @@ class OpenRouter:
         return self._post_raw(endpoint, **data).json()
 
     def chat(self, model, messages, **kwargs):
-        print(f"Sending chat request to model {model} with messages: {messages} and kwargs: {kwargs}")
         return self._post(
             'chat/completions',
             model=model,

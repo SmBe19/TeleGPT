@@ -1,7 +1,8 @@
 SOCKET_NAME = 'telegpt.sock'
 MAX_WORKER_IDLE_SECONDS = 60 * 60
 DATA_DIR = 'chats'
-BASE64_PREFIX = 'data:image/png;base64, '
+BASE64_PNG_PREFIX = 'data:image/png;base64,'
+BASE64_JPEG_PREFIX = 'data:image/jpeg;base64,'
 
 SYSTEM_MESSAGE = 'You are {assistant_name}, a friendly personal assistant. Answer concisely.'
 
@@ -25,7 +26,7 @@ DEFAULT_OPENAI_IMAGE_SETTINGS = {
 
 DEFAULT_SETTINGS = {
     'chat_model': 'openai/gpt-5.6-luna',
-    'image_model': 'openai/gpt-image-2',
+    'image_model': 'google/gemini-3.1-flash-lite-image',
     'audio_model': 'openai/gpt-audio-mini',
     'speech_model': 'fish-audio/s2.1-pro-free:free',
     'transcribe_model': 'openai/whisper-large-v3-turbo',
