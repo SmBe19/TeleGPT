@@ -1,6 +1,6 @@
 import threading
 
-from server.openai.chat import AiChat
+from server.aiapi.chat import AiChat
 
 
 class ChatManager:
@@ -13,7 +13,7 @@ class ChatManager:
     def get_chat(self, chatid) -> AiChat:
         with self.lock:
             if chatid not in self.chat_instances or not self.chat_instances[chatid].is_active():
-                self.chat_instances[chatid] = AiChat(self.telegram.user_manager.get_user(chatid))
+                self.chat_instances[chatid] = AiChat(self.telegram.model_manager, self.telegram.user_manager.get_user(chatid))
                 self.chat_instances[chatid].start()
             return self.chat_instances[chatid]
 

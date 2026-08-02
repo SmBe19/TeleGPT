@@ -1,17 +1,16 @@
 import base64
-import json
 
-from consts import SPEECH_MODELS, TRANSCRIBE_MODELS, SPEECH_VOICES, FEAT_SPEECH_INSTRUCTIONS
-from server.telegram.command_manager import command, TelegramCommands, callback
+from server.telegram.command_manager import CAT_AUDIO, CAT_TRANSCRIBE, command, callback
+from server.telegram.commands.utils import TelegramCommandsUtils
 
 
-class TelegramCommandsAudio(TelegramCommands):
+class TelegramCommandsAudio(TelegramCommandsUtils):
 
     def __init__(self):
         super().__init__()
         self.ai_audio = None
 
-    @command('Transform text to speech', 50)
+    @command('Transform text to speech', CAT_AUDIO + 1)
     def tts(self, message):
         prompt = self._get_command_argument(message, '/tts')
         if not prompt:
@@ -20,82 +19,53 @@ class TelegramCommandsAudio(TelegramCommands):
                 user.open_command = self.tts
         else:
             with self.user_manager.get_user_for_message(message) as user:
-                self.ai_audio.create_tts(prompt, user, lambda f: self._reply_voice(message, f))
+                self.ai_audio.create_speech(prompt, user, lambda f: self._reply_voice_file(message, f))
 
-    @command('Change instructions for tts', 51)
+    @command('Change instructions for tts', CAT_AUDIO + 2)
     def ttsinstructions(self, message):
-        instructions = self._get_command_argument(message, '/ttsinstructions')
-        with self.user_manager.get_user_for_message(message) as user:
-            if not SPEECH_MODELS[user.speech_model].get(FEAT_SPEECH_INSTRUCTIONS, False):
-                self._reply(message, 'The current model does not support instructions.')
-                return
-            if not instructions:
-                old_instrcutions = user.speech_instructions[user.speech_model]
-                if old_instrcutions:
-                    self._reply(message, f'The current instructions are "{old_instrcutions}". Please enter the new instructions or r to reset or c to cancel.')
-                else:
-                    self._reply(message, 'Please enter the new instructions.')
-                user.open_command = self.ttsinstructions
-            else:
-                if len(instructions) > 1:
-                    user.speech_instructions[user.speech_model] = instructions
-                elif instructions == 'r':
-                    user.speech_instructions[user.speech_model] = None
+        self._set_freetext_setting(message, '/ttsinstructions', self.user_manager.get_user_for_message(message).get_setting('ttsinstructions'), lambda value: self.user_manager.get_user_for_message(message).set_setting('ttsinstructions', value))(message)
 
-    @command('Select the tts model to use', 52)
+    @command('Select the tts model to use', CAT_AUDIO + 3)
     def ttsmodel(self, message):
-        with self.user_manager.get_user_for_message(message) as user:
-            speech_model = user.speech_model
-        reply = f'Choose tts model (currently {speech_model})'
-        buttons = [[{
-            'text': model,
-            'callback_data': json.dumps({
-                'cmd': 'ttsmodel',
-                'new_model': model
-            }),
-        }] for model in SPEECH_MODELS]
-        self._reply_keyboard(message, reply, self._with_cancel_button(buttons))
+        speech_model = self.user_manager.get_user_for_message(message).get_setting('speech_model')
+        self._select_model('/ttsmodel', 'ttsmodel', 'speech', speech_model)(message)
 
     @callback('ttsmodel')
     def ttsmodel_callback(self, message, data):
-        new_model = data['new_model']
+        new_model = self.model_manager.short_ids[data['nm']]
         with self.user_manager.get_user_for_message(message) as user:
-            user.speech_model = new_model
+            user.set_setting('speech_model', new_model)
         self._reply(message, f'Changed tts model to {new_model}.')
 
-    @command('Adjust tts voice', 53)
+    @command('Adjust tts voice', CAT_AUDIO + 4)
     def ttsvoice(self, message):
-        with self.user_manager.get_user_for_message(message) as user:
-            speech_voice = user.speech_voice[user.speech_model]
-            voices = SPEECH_MODELS[user.speech_model][SPEECH_VOICES]
-        reply = f'Choose tts voice (currently {speech_voice})'
-        buttons = [[{
-            'text': voice,
-            'callback_data': json.dumps({
-                'cmd': 'ttsvoice',
-                'voice': voice,
-            }),
-        }] for voice in voices]
-        self._reply_keyboard(message, reply, self._with_cancel_button(buttons))
+        speech_model = self.user_manager.get_user_for_message(message).get_setting('speech_model')
+        voices = self.model_manager.models[speech_model]['supported_voices']
+        if not voices:
+            self._reply(message, 'The current model does not support voice selection')
+            return
+        current_voice = self.user_manager.get_user_for_message(message).get_model_setting(speech_model, 'voice')
+        self._set_enum_setting('ttsvoice', current_voice, voices)(message)
 
     @callback('ttsvoice')
     def ttsvoice_callback(self, message, data):
-        new_voice = data['voice']
+        new_voice = data['nv']
         with self.user_manager.get_user_for_message(message) as user:
-            user.speech_voice[user.speech_model] = new_voice
+            speech_model = user.get_setting('speech_model')
+            user.set_model_setting(speech_model, 'voice', new_voice)
         self._reply(message, f'Changed tts voice to {new_voice}.')
 
-    @command('Switch creating tts for all assistant replies', 54)
+    @command('Switch creating tts for all assistant replies', CAT_AUDIO + 5)
     def ttsall(self, message):
         with self.user_manager.get_user_for_message(message) as user:
-            user.speech_all = not user.speech_all
-            new_speech_all = user.speech_all
+            user.set_setting('speech_all', not user.get_setting('speech_all'))
+            new_speech_all = user.get_setting('speech_all')
         if new_speech_all:
             self._reply(message, 'Changed setting. Will send tts for all assistant replies.')
         else:
             self._reply(message, 'Changed setting. Will not send tts for all assistant replies.')
 
-    @command('Transcribe the last audio input', 60)
+    @command('Transcribe the last audio input', CAT_TRANSCRIBE + 1)
     def stt(self, message):
         audio_messages = self.chat_manager.get_chat_for_message(message).get_audio_messages()
         if not audio_messages:
@@ -107,32 +77,23 @@ class TelegramCommandsAudio(TelegramCommands):
                 self._transcribe_and_submit(message, audio_bytes)
                 return
 
-    @command('Select the stt model to use', 61)
+    @command('Select the stt model to use', CAT_TRANSCRIBE + 2)
     def sttmodel(self, message):
-        with self.user_manager.get_user_for_message(message) as user:
-            transcribe_model = user.transcribe_model
-        reply = f'Choose stt model (currently {transcribe_model})'
-        buttons = [[{
-            'text': model,
-            'callback_data': json.dumps({
-                'cmd': 'sttmodel',
-                'new_model': model
-            }),
-        }] for model in TRANSCRIBE_MODELS]
-        self._reply_keyboard(message, reply, self._with_cancel_button(buttons))
+        transcribe_model = self.user_manager.get_user_for_message(message).get_setting('transcribe_model')
+        self._select_model('/sttmodel', 'sttmodel', 'transcription', transcribe_model)(message)
 
     @callback('sttmodel')
     def sttmodel_callback(self, message, data):
-        new_model = data['new_model']
+        new_model = self.model_manager.short_ids[data['nm']]
         with self.user_manager.get_user_for_message(message) as user:
-            user.transcribe_model = new_model
+            user.set_setting('transcribe_model', new_model)
         self._reply(message, f'Changed stt model to {new_model}.')
 
-    @command('Switch transcribing for all audio inputs', 62)
+    @command('Switch transcribing for all audio inputs', CAT_TRANSCRIBE + 3)
     def sttall(self, message):
         with self.user_manager.get_user_for_message(message) as user:
-            user.transcribe_all = not user.transcribe_all
-            new_transcribe_all = user.transcribe_all
+            user.set_setting('transcribe_all', not user.get_setting('transcribe_all'))
+            new_transcribe_all = user.get_setting('transcribe_all')
         if new_transcribe_all:
             self._reply(message, 'Changed setting. Will transcribe all audio inputs.')
         else:

@@ -1,22 +1,24 @@
 import base64
+import datetime
 import json
 import logging
 import os
+import requests
 import threading
 import time
 from queue import Queue, Empty
 
-from openai import OpenAI
-
-from consts import DEFAULT_REASONING_EFFORT, DEFAULT_VISION_DETAIL, MAX_WORKER_IDLE_SECONDS, DATA_DIR, REASONING_EFFORTS, SYSTEM_MESSAGE, CHAT_MODELS, DEFAULT_CHAT_MODEL, FEAT_VISION, FEAT_AUDIO
-from server.openai.utils import message_is_audio, message_is_image
+from consts import DEFAULT_THREAD_SETTINGS, MAX_WORKER_IDLE_SECONDS, DATA_DIR, SYSTEM_MESSAGE
+from server.aiapi.openrouter import OpenRouter
+from server.aiapi.utils import message_is_audio, message_is_image
 
 logger = logging.getLogger(__name__)
 
 
 class AiChat:
 
-    def __init__(self, user):
+    def __init__(self, model_manager, user):
+        self.model_manager = model_manager
         self.user = user
         self.running = False
         self.last_update = 0
@@ -25,7 +27,7 @@ class AiChat:
         self.message_processing_thread = None
         self.data = {}
         self.current_thread = {}
-        self.openai = OpenAI(api_key=os.environ['OPENAI_API_KEY'])
+        self.openrouter = OpenRouter(api_key=os.environ['OPENROUTER_API_KEY'])
         self._load_data()
 
     def is_active(self):
@@ -52,20 +54,38 @@ class AiChat:
             logger.info('Send new message to model.')
             self.current_thread['messages'].append({'role': 'user', 'content': text})
             messages = self.get_supported_messages()
-            reasoning_effort = self.get_current_reasoning_effort()
+            web_search = self.get_current_thread_setting('web_search')
+            reasoning_effort = self.get_current_thread_setting('reasoning_effort')
             kwargs = {}
+            if web_search:
+                kwargs['plugins'] = [{ "id": "web" }]
             if reasoning_effort:
                 kwargs['reasoning_effort'] = reasoning_effort
-            response = self.openai.chat.completions.create(
+            response = self.openrouter.chat(
                 model=self.get_current_model(),
                 messages=messages,
                 **kwargs,
             )
+            if 'error' in response:
+                logger.error('Error from model: %s', response)
+                self.user.send_message(f'Error from model: {response["error"].get("message", "Unknown error")}')
+                return
+            total_tokens = response.get('usage', {}).get('total_tokens', 0)
             logger.info('Got response from model.')
-            logger.debug('Usage for model: %s tokens by chat %s', response.usage.total_tokens, self.user.chatid)
-            self.current_thread['total_tokens'] += response.usage.total_tokens
-            response_text = response.choices[0].message.content
-            self.current_thread['messages'].append({'role': 'assistant', 'content': response_text})
+            logger.debug('Usage for model: %s tokens by chat %s', total_tokens, self.user.chatid)
+            self.current_thread['total_tokens'] += total_tokens
+            response_message = response['choices'][0]['message']
+            response_text = response_message['content']
+            if response_message.get('audio'):
+                logger.info('Response contains audio.')
+                audio_bytes = base64.b64decode(response_message['audio']['data'])
+                self.user.send_voice(audio_bytes)
+            if response_message.get('images'):
+                logger.info('Response contains image(s).')
+                for image in response_message['images']:
+                    image_bytes = requests.get(image['url']).content
+                    self.user.send_photo(image_bytes)
+            self.current_thread['messages'].append(response_message)
             self._save_current_thread()
             self.user.send_reply(response_text)
         self.queue.put(lambda: _process_text_message())
@@ -73,8 +93,9 @@ class AiChat:
     def submit_image_message(self, image_url):
         def _process_image():
             logger.info('Add new image message to thread.')
-            message = [{'type': 'image_url', 'image_url': {'url': image_url, 'detail': self.get_current_vision_detail()}}]
+            message = [{'type': 'image_url', 'image_url': {'url': image_url, 'detail': self.get_current_thread_setting('vision_detail')}}]
             self.current_thread['messages'].append({'role': 'user', 'content': message})
+            self._save_current_thread()
         self.queue.put(lambda: _process_image())
     
     def submit_audio_message(self, audio_bytes):
@@ -82,14 +103,15 @@ class AiChat:
             logger.info('Add new audio message to thread.')
             message = [{'type': 'input_audio', 'input_audio': {'data': base64.b64encode(audio_bytes).decode(), 'format': 'mp3'}}]
             self.current_thread['messages'].append({'role': 'user', 'content': message})
+            self._save_current_thread()
         self.queue.put(lambda: _process_audio())
 
     def get_thread_names(self):
         return {thread_id: value['name'] for thread_id, value in
                 sorted(self.data['threads'].items(), key=lambda x: x[0])}
 
-    def new_thread(self, system_message_template):
-        self.queue.put(lambda: self._new_thread(system_message_template))
+    def new_thread(self):
+        self.queue.put(lambda: self._new_thread())
 
     def rename_thread(self, new_name):
         def _rename_thread():
@@ -144,38 +166,29 @@ class AiChat:
 
     def set_model(self, model):
         def _set_model():
+            model_details = self.model_manager.models[model]
             self.current_thread['model'] = model
-            old_reasoning_effort = self.get_current_reasoning_effort()
-            new_reasoning_effort = CHAT_MODELS[model].get(REASONING_EFFORTS, [''])[0]
-            self.current_thread['reasoning_effort'] = new_reasoning_effort
-            self.user.send_message(f'Changed model to {model}.')
-            if old_reasoning_effort != new_reasoning_effort and new_reasoning_effort:
-                self.user.send_message(f'Changed reasoning effort to {new_reasoning_effort}.')
+            self.current_thread['reasoning_effort'] = model_details['reasoning']['default_effort']
+            self.user.send_message(f'Changed model to {model_details["name"]} ({model}).')
+            if self.current_thread['reasoning_effort']:
+                self.user.send_message(f'Set reasoning effort to {self.current_thread["reasoning_effort"]}.')
+            self.user.send_message(f'Supports {", ".join(model_details["architecture"]["input_modalities"])} as inputs, {", ".join(model_details["architecture"]["output_modalities"])} as outputs.')
         self.queue.put(lambda: _set_model())
+    
+    def get_current_thread_setting(self, setting):
+        return self.current_thread.get(setting)
 
-    def set_reasoning_effort(self, effort):
-        def _set_reasoning_effort():
-            self.current_thread['reasoning_effort'] = effort
-            self.user.send_message(f'Changed reasoning effort to {effort}.')
-        self.queue.put(lambda: _set_reasoning_effort())
-
-    def set_vision_detail(self, detail):
-        def _set_vision_detail():
-            self.current_thread['vision_detail'] = detail
-            self.user.send_message(f'Changed vision detail to {detail}.')
-        self.queue.put(lambda: _set_vision_detail())
+    def set_thread_setting(self, setting, value):
+        def _set_thread_setting():
+            self.current_thread[setting] = value
+            self.user.send_message(f'Changed {setting} to {value}.')
+        self.queue.put(lambda: _set_thread_setting())
 
     def get_current_system_message(self):
         return self.current_thread['init_message']
 
     def get_current_model(self):
         return self.current_thread['model']
-    
-    def get_current_reasoning_effort(self):
-        return self.current_thread['reasoning_effort']
-
-    def get_current_vision_detail(self):
-        return self.current_thread['vision_detail']
 
     def get_current_thread_id(self):
         return self.data['current_thread_id']
@@ -189,8 +202,9 @@ class AiChat:
         return messages
     
     def get_supported_messages(self, init_message=None):
-        vision = CHAT_MODELS[self.get_current_model()].get(FEAT_VISION, False)
-        audio = CHAT_MODELS[self.get_current_model()].get(FEAT_AUDIO, False)
+        model_details = self.model_manager.models[self.get_current_model()]
+        vision = 'image' in model_details['architecture']['input_modalities']
+        audio = 'audio' in model_details['architecture']['input_modalities']
         def _message_supported(message):
             return (vision or not message_is_image(message)) and (audio or not message_is_audio(message))
         return list(filter(_message_supported, self.get_all_messages(init_message)))
@@ -213,7 +227,7 @@ class AiChat:
             self._switch_to_latest_thread()
 
     def _load_data(self):
-        root_data_path = os.path.join(DATA_DIR, f'{self.user.chatid}.json')
+        root_data_path = os.path.join(DATA_DIR, f'{self.user.chatid}_chat.json')
         if os.path.exists(root_data_path):
             with open(root_data_path) as f:
                 self.data = json.load(f)
@@ -227,7 +241,7 @@ class AiChat:
             self._new_thread(silent=True)
 
     def _thread_data_path(self, thread_id):
-        return os.path.join(DATA_DIR, f'{self.user.chatid}_{thread_id}.json')
+        return os.path.join(DATA_DIR, f'{self.user.chatid}_thread_{thread_id}.json')
 
     def _save_current_thread(self):
         current_thread_id = self.get_current_thread_id()
@@ -236,7 +250,7 @@ class AiChat:
             json.dump(self.current_thread, f)
 
     def _save_root_data(self):
-        root_data_path = os.path.join(DATA_DIR, f'{self.user.chatid}.json')
+        root_data_path = os.path.join(DATA_DIR, f'{self.user.chatid}_chat.json')
         with open(root_data_path, 'w') as f:
             json.dump(self.data, f)
 
@@ -244,14 +258,17 @@ class AiChat:
         thread_id = str(self.data['next_thread_id'])
         self.data['next_thread_id'] += 1
         self.data['threads'][thread_id] = {
-            'name': 'Unnamed thread',
+            'name': 'Unnamed thread ' + datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'last_use': time.time(),
         }
         self.data['current_thread_id'] = thread_id
+        default_model = self.user.get_setting('chat_model')
+        model_details = self.model_manager.models[default_model]
+        reasoning_effort = model_details['reasoning']['default_effort']
         self.current_thread = {
-            'model': DEFAULT_CHAT_MODEL,
-            'reasoning_effort': DEFAULT_REASONING_EFFORT,
-            'vision_detail': DEFAULT_VISION_DETAIL,
+            **DEFAULT_THREAD_SETTINGS,
+            'model': default_model,
+            'reasoning_effort': reasoning_effort,
             'total_tokens': 0,
             'init_message': SYSTEM_MESSAGE.format(assistant_name=self.user.telegram.assistant_name),
             'messages': [],
@@ -259,7 +276,7 @@ class AiChat:
         self._save_current_thread()
         self._save_root_data()
         if not silent:
-            self.user.send_message('Created new thread.')
+            self.user.send_message(f'Created new thread with model {default_model} ({reasoning_effort}).')
 
     def _switch_thread(self, new_thread_id):
         if new_thread_id in self.data['threads']:

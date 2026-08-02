@@ -1,15 +1,14 @@
-import json
+from server.telegram.command_manager import CAT_BASICS, CAT_THREADS, command, callback
+from server.telegram.commands.utils import TelegramCommandsUtils
 
-from server.telegram.command_manager import command, TelegramCommands, callback
 
+class TelegramCommandsThreads(TelegramCommandsUtils):
 
-class TelegramCommandsThreads(TelegramCommands):
-
-    @command('Start a new conversation', 10)
+    @command('Start a new conversation', CAT_BASICS + 1)
     def new(self, message):
         self.chat_manager.get_chat_for_message(message).new_thread()
 
-    @command('Rename the current thread', 30)
+    @command('Rename the current thread', CAT_THREADS + 1)
     def rename(self, message):
         new_name = self._get_command_argument(message, '/rename')
         if not new_name:
@@ -19,11 +18,11 @@ class TelegramCommandsThreads(TelegramCommands):
         else:
             self.chat_manager.get_chat_for_message(message).rename_thread(new_name)
 
-    @command('Finish the current thread', 11)
+    @command('Finish the current thread', CAT_BASICS + 2)
     def finish(self, message):
         self.chat_manager.get_chat_for_message(message).finish_thread()
 
-    @command('Change the current thread', 12)
+    @command('Change the current thread', CAT_BASICS + 3)
     def thread(self, message):
         chat = self.chat_manager.get_chat_for_message(message)
         current_thread_id = chat.get_current_thread_id()
@@ -32,10 +31,10 @@ class TelegramCommandsThreads(TelegramCommands):
                 f'\n\nSelect a thread to switch to.'
         buttons = [[{
             'text': threads[thread_id],
-            'callback_data': json.dumps({
+            'callback_data': {
                 'cmd': 'switch_thread',
                 'new_thread_id': thread_id,
-            }),
+            },
         }] for thread_id in threads]
         self._reply_keyboard(message, reply, self._with_cancel_button(buttons))
 
@@ -44,7 +43,7 @@ class TelegramCommandsThreads(TelegramCommands):
         new_thread_id = data['new_thread_id']
         self.chat_manager.get_chat_for_message(message).switch_thread(new_thread_id)
 
-    @command('Rewind user messages', 32)
+    @command('Rewind user messages', CAT_THREADS + 3)
     def rewind(self, message):
         amount = self._get_command_argument(message, '/rewind')
         try:
@@ -53,7 +52,7 @@ class TelegramCommandsThreads(TelegramCommands):
             amount = 1
         self.chat_manager.get_chat_for_message(message).rewind(amount)
 
-    @command('Remind you of the last few messages', 31)
+    @command('Remind you of the last few messages', CAT_THREADS + 2)
     def remindme(self, message):
         amount = self._get_command_argument(message, '/remindme')
         try:

@@ -1,5 +1,12 @@
 import abc
-import json
+
+CAT_BASICS = 1000
+CAT_TEXT = 2000
+CAT_THREADS = 3000
+CAT_IMAGES = 4000
+CAT_AUDIO = 5000
+CAT_TRANSCRIBE = 6000
+CAT_ADVANCED = 9000
 
 telegram_commands = {}
 telegram_callbacks = {}
@@ -26,6 +33,7 @@ def callback(cmd):
 class TelegramCommands(abc.ABC):
 
     def __init__(self):
+        self.model_manager = None
         self.chat_manager = None
         self.user_manager = None
 
@@ -42,7 +50,7 @@ class TelegramCommands(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def _reply_voice(self, message, voice_file):
+    def _reply_voice_file(self, message, voice_file):
         ...
 
     @abc.abstractmethod
@@ -52,20 +60,3 @@ class TelegramCommands(abc.ABC):
     @abc.abstractmethod
     def _transcribe_and_submit(self, message, audio_bytes):
         ...
-
-    def _get_command_argument(self, message, command_name):
-        text = message['text']
-        for entity in message.get('entities', []):
-            if entity['type'] == 'bot_command':
-                entity_end = entity['offset'] + entity['length']
-                if text[entity['offset']:entity_end] == command_name:
-                    return text[entity_end:].strip()
-        return text
-
-    def _with_cancel_button(self, buttons):
-        return buttons + [[{
-            'text': 'Cancel',
-            'callback_data': json.dumps({
-                'cmd': 'cancel',
-            })
-        }]]

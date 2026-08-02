@@ -5,7 +5,8 @@ import string
 
 import requests
 
-from server.openai.images import AiImages
+from server.aiapi.images import AiImages
+from server.aiapi.model_manager import ModelManager
 from server.telegram.command_manager import telegram_commands, telegram_callbacks
 from server.telegram.commands.images import TelegramCommandsImages
 from server.telegram.commands.general import TelegramCommandsGeneral
@@ -14,8 +15,8 @@ from server.telegram.commands.threads import TelegramCommandsThreads
 from server.telegram.commands.audio import TelegramCommandsAudio
 from server.telegram.chat_manager import ChatManager
 from server.telegram.utils import UpdateDeduplicator, TelegramError
-from server.telegram.user import TelegramUserManager
-from server.openai.audio import AiAudio
+from server.telegram.telegram_user import TelegramUserManager
+from server.aiapi.audio import AiAudio
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ class Telegram(
         self.allowed_users = set(int(x) for x in allowed_users)
         self.secret_token = ''.join(random.choice(string.ascii_letters) for _ in range(32))
         self.deduplicator = UpdateDeduplicator()
+        self.model_manager = ModelManager()
         self.chat_manager = ChatManager(self)
         self.ai_images = AiImages()
         self.ai_audio = AiAudio()
@@ -111,7 +113,10 @@ class Telegram(
     def _send_photo(self, chatid, photo_bytes, **kwargs):
         return self._post('sendPhoto', chat_id=chatid, files={'photo': photo_bytes}, **kwargs)
 
-    def _send_voice(self, chatid, voice_file, **kwargs):
+    def _send_voice(self, chatid, voice_bytes, **kwargs):
+        return self._post('sendVoice', chat_id=chatid, files={'voice': voice_bytes}, **kwargs)
+
+    def _send_voice_file(self, chatid, voice_file, **kwargs):
         logging.info('Sending voice file %s to chat %s', voice_file, chatid)
         with open(voice_file, 'rb') as f:
             return self._post('sendVoice', chat_id=chatid, files={'voice': f}, **kwargs)
@@ -120,15 +125,19 @@ class Telegram(
         return self._send_message(message['chat']['id'], reply)
 
     def _reply_keyboard(self, message, reply, buttons):
+        buttons = self._prepare_buttons(buttons)
         return self._send_message(message['chat']['id'], reply, reply_markup={
             'inline_keyboard': buttons
         })
 
     def _reply_photo(self, message, photo_bytes):
-        self._send_photo(message['chat']['id'], photo_bytes)
+        return self._send_photo(message['chat']['id'], photo_bytes)
 
-    def _reply_voice(self, message, voice_file):
-        self._send_voice(message['chat']['id'], voice_file)
+    def _reply_voice(self, message, voice_bytes):
+        return self._send_voice(message['chat']['id'], voice_bytes)
+
+    def _reply_voice_file(self, message, voice_file):
+        return self._send_voice_file(message['chat']['id'], voice_file)
 
     def _chat_action(self, message, action):
         self._post('sendChatAction', chat_id=message['chat']['id'], action=action)
@@ -139,6 +148,7 @@ class Telegram(
     def _update_reply_keyboard(self, message, buttons):
         reply_markup = {}
         if buttons:
+            buttons = self._prepare_buttons(buttons)
             reply_markup = {'inline_keyboard': buttons}
         self._post('editMessageReplyMarkup', chat_id=message['chat']['id'], message_id=message['message_id'], reply_markup=reply_markup)
 
@@ -216,7 +226,7 @@ class Telegram(
             if size >= 512 and size < min_size_over_512:
                 min_size_over_512 = size
                 min_photo_over_512 = photo
-        target_detail = self.chat_manager.get_chat_for_message(message).get_current_vision_detail()
+        target_detail = self.chat_manager.get_chat_for_message(message).get_current_thread_setting('vision_detail')
         if target_detail == 'low' and min_photo_over_512 is not None:
             photo = min_photo_over_512
         else:
@@ -238,6 +248,14 @@ class Telegram(
         if message['voice']['file_size'] > 15 * 1024 * 1024:
             self._reply(message, 'Sorry, this file is too large.')
         self._handle_audio_file(message, message['voice']['file_id'])
+
+    def _prepare_buttons(self, buttons):
+        for button_row in buttons:
+            for button in button_row:
+                button['callback_data'] = json.dumps(button['callback_data'], separators=(',', ':'))
+                if len(button['callback_data']) > 64:
+                    logger.warning('Callback data too long: %s', button['callback_data'])
+        return buttons
 
     def _handle_callback(self, message, telegram_callback):
         data = json.loads(telegram_callback['data'])

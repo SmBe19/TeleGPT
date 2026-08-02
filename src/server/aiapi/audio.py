@@ -1,11 +1,14 @@
+import base64
 import logging
 import io
 import os
 import tempfile
-
-from openai import OpenAI
 import pydub
 import requests
+
+from openai import OpenAI
+
+from server.aiapi.openrouter import OpenRouter
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +17,7 @@ class AiAudio:
 
     def __init__(self):
         self.openai = OpenAI(api_key=os.environ['OPENAI_API_KEY'])
+        self.openrouter = OpenRouter(api_key=os.environ['OPENROUTER_API_KEY'])
     
     def get_audio_bytes(self, url):
         with tempfile.TemporaryDirectory() as tempdir:
@@ -33,23 +37,25 @@ class AiAudio:
         audio_file = io.BytesIO(audio_bytes)
         audio_file.name = 'voice.mp3'
         logger.info('Start transcribing')
-        transcript = self.openai.audio.transcriptions.create(file=audio_file, model=user.transcribe_model)
+        transcript = self.openrouter.stt(
+            model=user.get_setting('transcribe_model'),
+            audio_bytes_mp3=audio_bytes
+        )
         logger.info('Finished transcribing')
-        return transcript.text
+        return transcript['text']
 
     def create_speech(self, message, user, callback):
         with tempfile.TemporaryDirectory() as tempdir:
-            kwargs = {}
-            if user.speech_instructions.get(user.speech_model):
-                kwargs['instructions'] = user.speech_instructions[user.speech_model]
-            response = self.openai.audio.speech.create(
-                model=user.speech_model,
+            speech_model = user.get_setting('speech_model')
+            # TODO ttsinstructions are not supported
+            ttsinstructions = user.get_model_setting(speech_model, 'instructions')
+            ttsvoice = user.get_model_setting(speech_model, 'voice')
+            response = self.openrouter.tts(
+                model=speech_model,
                 input=message,
-                voice=user.speech_voice[user.speech_model],
-                response_format='opus',
-                **kwargs,
+                voice=ttsvoice,
             )
-            voice_file = os.path.join(tempdir, 'voice.ogg')
+            voice_file = os.path.join(tempdir, 'voice.mp3')
             with open(voice_file, 'wb') as f:
                 f.write(response.content)
             callback(voice_file)
