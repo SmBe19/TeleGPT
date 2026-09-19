@@ -84,12 +84,15 @@ class TelegramCommandsImages(TelegramCommandsUtils):
                 values = OPENAI_IMAGE_SETTINGS[setting]
             else:
                 values = self.model_manager.models[image_model]['image_supported_parameters'][setting]
+        values.append('default')
         self._set_enum_setting('imgcfgv', current_value, values, {'s': setting})(message)
 
     @callback('imgcfgv')
     def imgsettingvalue_callback(self, message, data):
         setting = data['s']
         new_value = data['nv']
+        if new_value == 'default':
+            new_value = None
         with self.user_manager.get_user_for_message(message) as user:
             image_model = user.get_setting('image_model')
             user.set_model_setting(image_model, setting, new_value)

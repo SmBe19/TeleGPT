@@ -86,7 +86,11 @@ class TelegramUser:
     def set_model_setting(self, model, key, value):
         if model not in self.settings.get('models', {}):
             self.settings.setdefault('models', {})[model] = {}
-        self.settings['models'][model][key] = value
+        if value is None:
+            if key in self.settings['models'][model]:
+                del self.settings['models'][model][key]
+        else:
+            self.settings['models'][model][key] = value
         self._save_settings()
 
     def _load_settings(self):
